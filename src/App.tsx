@@ -1,22 +1,23 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header.tsx';
 import { UploadZone } from './components/UploadZone.tsx';
 import { SettingsPanel } from './components/SettingsPanel.tsx';
 import { ComparisonSlider } from './components/ComparisonSlider.tsx';
 import { BatchQueue } from './components/BatchQueue.tsx';
 import { OpenSourceDocsModal } from './components/OpenSourceDocsModal.tsx';
-import { PrivacyBanner } from './components/PrivacyBanner.tsx';
 import { SAMPLE_IMAGES, SampleItem } from './data/samples.ts';
+import JSZip from 'jszip';
 import {
   ImageQueueItem,
   UpscaleSettings,
-  SystemInfo,
   UpscaleResultData,
 } from './types.ts';
 import {
   Sparkles,
   CheckCircle,
   RefreshCw,
+  Zap,
+  ShieldCheck,
 } from 'lucide-react';
 
 export default function App() {
@@ -24,20 +25,19 @@ export default function App() {
     scale: 2,
     preset: 'photo',
     sharpness: 45,
-    denoise: 35,
+    denoise: 20,
     detailBoost: 50,
     contrast: 0,
     brightness: 0,
     saturation: 0,
     format: 'png',
-    quality: 92,
+    quality: 95,
     autoDeleteOnDownload: true,
   });
 
   const [queue, setQueue] = useState<ImageQueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDocsOpen, setIsDocsOpen] = useState(false);
-  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [isProcessingAny, setIsProcessingAny] = useState(false);
   const [isGeneratingZip, setIsGeneratingZip] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -47,7 +47,7 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Helper to read natural image dimensions
+  // Helper to read image dimensions
   const getImageDimensions = (url: string): Promise<{ width: number; height: number }> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -57,26 +57,7 @@ export default function App() {
     });
   };
 
-  // Helper to convert an image URL into a real File object for uploading
-  const urlToFile = async (url: string, filename: string): Promise<File> => {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed to load asset from ${url}`);
-    const blob = await res.blob();
-    return new File([blob], filename, { type: blob.type || 'image/jpeg' });
-  };
-
-  // Fetch engine health on initial mount
-  useEffect(() => {
-    fetch('/api/system-status')
-      .then((res) => {
-        if (res.ok) return res.json();
-        throw new Error('Non-ok response');
-      })
-      .then((data) => setSystemInfo(data))
-      .catch((err) => console.warn('System status check:', err));
-  }, []);
-
-  // Pre-load benchmark sample into queue as IDLE on first mount (no auto-network call)
+  // Load initial benchmark sample into queue as IDLE on mount
   useEffect(() => {
     if (queue.length === 0) {
       const sample = SAMPLE_IMAGES[0];
@@ -85,9 +66,9 @@ export default function App() {
         id: itemId,
         name: `${sample.name}.jpg`,
         previewUrl: sample.url,
-        originalSize: 520 * 1024,
-        originalWidth: 1200,
-        originalHeight: 896,
+        originalSize: 11425,
+        originalWidth: 400,
+        originalHeight: 300,
         status: 'idle',
         progress: 0,
         isSample: true,
@@ -158,9 +139,9 @@ export default function App() {
       id: itemId,
       name: `${sample.name}.jpg`,
       previewUrl: sample.url,
-      originalSize: 520 * 1024,
-      originalWidth: 1200,
-      originalHeight: 896,
+      originalSize: 15000,
+      originalWidth: 400,
+      originalHeight: 300,
       status: 'idle',
       progress: 0,
       isSample: true,
@@ -173,54 +154,58 @@ export default function App() {
 
     setQueue((prev) => [newItem, ...prev.filter((i) => i.id !== itemId)]);
     setSelectedId(itemId);
-    processItem(newItem);
   };
 
-  // Core upscaling logic: all items use POST /api/upscale with FormData
+  // Process a queue item
   const processItem = async (item: ImageQueueItem, customSettings?: UpscaleSettings) => {
     const activeOpts = customSettings || item.settingsSnapshot;
 
-    // Set processing state
     setQueue((prev) =>
-      prev.map((i) => (i.id === item.id ? { ...i, status: 'processing', progress: 25 } : i))
+      prev.map((i) => (i.id === item.id ? { ...i, status: 'processing', progress: 30 } : i))
     );
     setIsProcessingAny(true);
 
     try {
-      // 1. Ensure we have a valid File object
-      let uploadFile = item.file;
-      if (!uploadFile && item.previewUrl) {
-        uploadFile = await urlToFile(item.previewUrl, item.name);
-        item.file = uploadFile;
+      // 1. Get base64 or file
+      let base64Image = '';
+      if (item.file) {
+        base64Image = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(item.file!);
+        });
+      } else if (item.previewUrl) {
+        const resp = await fetch(item.previewUrl);
+        const blob = await resp.blob();
+        base64Image = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
       }
-
-      if (!uploadFile) {
-        throw new Error('Image source could not be resolved');
-      }
-
-      // 2. Build FormData
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-      formData.append('scale', String(activeOpts.scale));
-      formData.append('preset', activeOpts.preset);
-      formData.append('sharpness', String(activeOpts.sharpness));
-      formData.append('denoise', String(activeOpts.denoise));
-      formData.append('detailBoost', String(activeOpts.detailBoost));
-      formData.append('contrast', String(activeOpts.contrast));
-      formData.append('format', activeOpts.format);
-      formData.append('quality', String(activeOpts.quality));
 
       setQueue((prev) =>
-        prev.map((i) => (i.id === item.id ? { ...i, progress: 50 } : i))
+        prev.map((i) => (i.id === item.id ? { ...i, progress: 60 } : i))
       );
 
-      // 3. Send to cloud upscaler
+      // 2. Call /api/upscale with JSON (Universal Vercel + Node support)
       const res = await fetch('/api/upscale', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: base64Image,
+          name: item.name,
+          scale: activeOpts.scale,
+          preset: activeOpts.preset,
+          sharpness: activeOpts.sharpness,
+          denoise: activeOpts.denoise,
+          format: activeOpts.format,
+          quality: activeOpts.quality,
+        }),
       });
 
-      // 4. Safe Content-Type & JSON parsing
       const contentType = res.headers.get('content-type') || '';
       let resultData: any;
 
@@ -231,7 +216,7 @@ export default function App() {
         throw new Error(
           res.ok
             ? 'Unexpected non-JSON response from server'
-            : `Server returned error (${res.status}): ${text.slice(0, 120)}`
+            : `Server returned error (${res.status}): ${text.slice(0, 100)}`
         );
       }
 
@@ -239,7 +224,7 @@ export default function App() {
         throw new Error(resultData?.error || `Upload failed with status ${res.status}`);
       }
 
-      // 5. Update item state
+      // Update queue item
       setQueue((prev) =>
         prev.map((i) =>
           i.id === item.id
@@ -247,7 +232,7 @@ export default function App() {
                 ...i,
                 status: 'success',
                 progress: 100,
-                result: resultData,
+                result: resultData as UpscaleResultData,
                 settingsSnapshot: activeOpts,
               }
             : i
@@ -280,62 +265,55 @@ export default function App() {
     if (idleItems.length === 0) return;
 
     for (const item of idleItems) {
-      await processItem(item);
+      await processItem(item, settings);
     }
   };
 
-  // Download individual image
+  // Instant client-side download: zero server round trips, 100% reliable on Vercel
   const handleDownloadItem = (item: ImageQueueItem) => {
-    if (!item.result?.downloadUrl) return;
+    if (!item.result) return;
 
-    const deleteParam = settings.autoDeleteOnDownload ? '&deleteAfter=true' : '';
-    const downloadUrl = `${item.result.downloadUrl}?download=true${deleteParam}`;
+    const downloadSrc = item.result.dataUrl || item.result.downloadUrl;
+    const filename = `${item.name.replace(/\.[^/.]+$/, '')}_upscaled_${item.result.scale}x.${item.result.format}`;
 
     const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.setAttribute(
-      'download',
-      `${item.name.replace(/\.[^/.]+$/, '')}_upscaled_${item.result.scale}x.${item.result.format}`
-    );
+    link.href = downloadSrc;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
-    if (settings.autoDeleteOnDownload) {
-      showToast('Downloaded & purged from server memory.');
-    }
+    showToast(`Downloaded ${filename}`);
   };
 
-  // Download ZIP archive
+  // Client-side ZIP generation with JSZip: zero server memory load, zero Vercel payload limits
   const handleDownloadAllZip = async () => {
     const completedItems = queue.filter((i) => i.status === 'success' && i.result);
     if (completedItems.length === 0) return;
 
     setIsGeneratingZip(true);
     try {
-      const ids = completedItems.map((i) => i.result!.id);
-      const res = await fetch('/api/batch-zip', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ids,
-          deleteAfter: settings.autoDeleteOnDownload,
-        }),
-      });
+      const zip = new JSZip();
 
-      if (!res.ok) throw new Error('Failed to create ZIP');
+      for (const item of completedItems) {
+        if (item.result?.dataUrl) {
+          const base64Data = item.result.dataUrl.split(',')[1];
+          const filename = `${item.name.replace(/\.[^/.]+$/, '')}_upscaled_${item.result.scale}x.${item.result.format}`;
+          zip.file(filename, base64Data, { base64: true });
+        }
+      }
 
-      const blob = await res.blob();
+      const blob = await zip.generateAsync({ type: 'blob' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `OpenUpscale_Batch_${Date.now()}.zip`);
+      link.download = `OpenUpscale_Batch_${Date.now()}.zip`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
 
-      showToast(`Downloaded ${completedItems.length} images as ZIP.`);
+      showToast(`Downloaded ${completedItems.length} images as ZIP archive`);
     } catch (error: any) {
       showToast(`ZIP error: ${error.message}`);
     } finally {
@@ -344,12 +322,7 @@ export default function App() {
   };
 
   // Remove single item
-  const handleRemoveItem = async (id: string) => {
-    const item = queue.find((i) => i.id === id);
-    if (item?.result?.id) {
-      fetch(`/api/files/${item.result.id}`, { method: 'DELETE' }).catch(() => {});
-    }
-
+  const handleRemoveItem = (id: string) => {
     setQueue((prev) => prev.filter((i) => i.id !== id));
     if (selectedId === id) {
       const remaining = queue.filter((i) => i.id !== id);
@@ -357,20 +330,11 @@ export default function App() {
     }
   };
 
-  // Clear all items and purge server cache
-  const handleClearAll = async () => {
-    try {
-      await fetch('/api/cleanup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ all: true }),
-      });
-    } catch (e) {
-      console.warn('Cleanup error:', e);
-    }
+  // Clear all
+  const handleClearAll = () => {
     setQueue([]);
     setSelectedId(null);
-    showToast('Queue cleared & server memory purged.');
+    showToast('Queue cleared');
   };
 
   const selectedItem = queue.find((i) => i.id === selectedId) || queue[0];
@@ -381,10 +345,10 @@ export default function App() {
       <Header onOpenDocs={() => setIsDocsOpen(true)} activeCount={queue.length} />
 
       {/* Main Container */}
-      <main className="flex-1 mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 space-y-6">
+      <main className="flex-1 mx-auto w-full max-w-7xl px-3.5 py-5 sm:px-6 space-y-6">
         {selectedItem ? (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
               {/* Left 2 Cols: Comparison Slider */}
               <div className="lg:col-span-2 space-y-3">
                 <ComparisonSlider
@@ -431,6 +395,11 @@ export default function App() {
                     <Sparkles className="h-4 w-4" />
                     <span>Upscale Image ({settings.scale}x)</span>
                   </button>
+                ) : selectedItem.status === 'processing' ? (
+                  <div className="w-full py-3 px-4 rounded-xl font-medium text-sm text-cyan-300 bg-slate-800 border border-cyan-500/30 flex items-center justify-center gap-2">
+                    <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
+                    <span>Processing in Cloud...</span>
+                  </div>
                 ) : selectedItem.status === 'success' ? (
                   <button
                     onClick={() => processItem(selectedItem, settings)}
@@ -438,7 +407,7 @@ export default function App() {
                     className="w-full py-2.5 px-4 rounded-xl font-medium text-xs text-slate-300 bg-slate-800 hover:bg-slate-750 hover:text-white border border-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
                   >
                     <RefreshCw className="h-3.5 w-3.5 text-cyan-400" />
-                    <span>Re-upscale with Current Settings</span>
+                    <span>Re-Upscale with Current Settings</span>
                   </button>
                 ) : null}
               </div>
@@ -490,22 +459,31 @@ export default function App() {
           </div>
         )}
 
-        {/* Privacy & Engine Metrics */}
-        <PrivacyBanner systemInfo={systemInfo} />
+        {/* Clean Privacy Callout */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+          <div className="flex items-center gap-2.5">
+            <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+            <span>100% Privacy: Files are processed ephemerally and never retained. Zero tracking.</span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <Zap className="h-4 w-4 text-cyan-400 shrink-0" />
+            <span>Vercel Serverless Ready · Lanczos-3 Sinc Resampling</span>
+          </div>
+        </div>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950/80 py-6 text-xs text-slate-400">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <footer className="border-t border-slate-800/80 bg-slate-950/80 py-5 text-xs text-slate-400">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-200">OpenUpscale</span>
             <span>·</span>
-            <span>Open Source Cloud Super-Resolution</span>
+            <span>Free Open Source Cloud Upscaler</span>
             <span>·</span>
             <span className="font-mono text-cyan-400">MIT</span>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-5">
             <button
               onClick={() => setIsDocsOpen(true)}
               className="hover:text-white transition-colors cursor-pointer"
@@ -520,20 +498,20 @@ export default function App() {
             >
               GitHub
             </a>
-            <span>Zero Tracking · Ephemeral Memory</span>
+            <span>Zero Tracking</span>
           </div>
         </div>
       </footer>
 
-      {/* Floating Toast Notification */}
+      {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs shadow-2xl animate-fade-in">
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs shadow-2xl animate-fade-in">
           <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Open Source & Docs Modal */}
+      {/* Docs Modal */}
       <OpenSourceDocsModal isOpen={isDocsOpen} onClose={() => setIsDocsOpen(false)} />
     </div>
   );

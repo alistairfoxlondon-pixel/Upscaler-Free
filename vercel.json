@@ -1,34 +1,13 @@
 {
-  "version": 2,
-  "buildCommand": "npm run build",
-  "builds": [
+  "framework": "vite",
+  "rewrites": [
     {
-      "src": "server.ts",
-      "use": "@vercel/node",
-      "config": {
-        "maxDuration": 60,
-        "memory": 1024
-      }
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
     },
     {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/server.ts"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

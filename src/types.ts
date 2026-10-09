@@ -18,6 +18,7 @@ export interface UpscaleSettings {
 
 export interface UpscaleResultData {
   id: string;
+  dataUrl?: string;
   downloadUrl: string;
   originalName: string;
   format: string;

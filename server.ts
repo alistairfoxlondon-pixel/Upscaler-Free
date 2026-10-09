@@ -69,11 +69,23 @@ app.get('/api/system-status', (_req, res) => {
   });
 });
 
-// Single Image Upscale (Multipart Form-Data)
+// Single Image Upscale (Supports both Multipart Form-Data and JSON Base64)
 app.post('/api/upscale', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file || !req.file.buffer) {
-      return res.status(400).json({ error: 'No image file provided' });
+    let inputBuffer: Buffer | null = null;
+    let originalName = 'image';
+
+    if (req.file && req.file.buffer) {
+      inputBuffer = req.file.buffer;
+      originalName = req.file.originalname || `image_${Date.now()}`;
+    } else if (req.body && req.body.image) {
+      const base64Data = req.body.image.replace(/^data:image\/\w+;base64,/, '');
+      inputBuffer = Buffer.from(base64Data, 'base64');
+      originalName = req.body.name || `image_${Date.now()}`;
+    }
+
+    if (!inputBuffer) {
+      return res.status(400).json({ error: 'No image file or base64 data provided' });
     }
 
     const options: UpscaleOptions = {
@@ -81,19 +93,14 @@ app.post('/api/upscale', upload.single('file'), async (req, res) => {
       preset: req.body.preset || 'photo',
       sharpness: req.body.sharpness !== undefined ? Number(req.body.sharpness) : undefined,
       denoise: req.body.denoise !== undefined ? Number(req.body.denoise) : undefined,
-      detailBoost: req.body.detailBoost !== undefined ? Number(req.body.detailBoost) : undefined,
-      contrast: req.body.contrast !== undefined ? Number(req.body.contrast) : undefined,
-      brightness: req.body.brightness !== undefined ? Number(req.body.brightness) : undefined,
-      saturation: req.body.saturation !== undefined ? Number(req.body.saturation) : undefined,
       format: req.body.format || 'png',
-      quality: req.body.quality ? Number(req.body.quality) : 92,
+      quality: req.body.quality ? Number(req.body.quality) : 95,
     };
 
-    const result = await processImageUpscale(req.file.buffer, options);
+    const result = await processImageUpscale(inputBuffer, options);
     const fileId = crypto.randomUUID();
-    const originalName = req.file.originalname || `image_${Date.now()}`;
 
-    // Store in ephemeral memory cache
+    // Store in ephemeral memory cache for direct link downloads if needed
     ephemeralStorage.store({
       id: fileId,
       originalName,
@@ -108,12 +115,13 @@ app.post('/api/upscale', upload.single('file'), async (req, res) => {
       upscaledSize: result.upscaledSize,
       processingTimeMs: result.processingTimeMs,
       scale: options.scale,
-      preset: options.preset,
+      preset: options.preset || 'photo',
     });
 
     res.json({
       success: true,
       id: fileId,
+      dataUrl: result.dataUrl,
       downloadUrl: `/api/files/${fileId}`,
       originalName,
       format: result.format,
@@ -126,7 +134,7 @@ app.post('/api/upscale', upload.single('file'), async (req, res) => {
       upscaledSize: result.upscaledSize,
       processingTimeMs: result.processingTimeMs,
       scale: options.scale,
-      preset: options.preset,
+      preset: options.preset || 'photo',
     });
   } catch (error: any) {
     console.error('Upscale error:', error);
