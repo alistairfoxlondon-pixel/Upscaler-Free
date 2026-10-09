@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header.tsx';
 import { UploadZone } from './components/UploadZone.tsx';
 import { SettingsPanel } from './components/SettingsPanel.tsx';
@@ -7,331 +7,252 @@ import { BatchQueue } from './components/BatchQueue.tsx';
 import { OpenSourceDocsModal } from './components/OpenSourceDocsModal.tsx';
 import { SAMPLE_IMAGES, SampleItem } from './data/samples.ts';
 import JSZip from 'jszip';
-import {
-  ImageQueueItem,
-  UpscaleSettings,
-  UpscaleResultData,
-} from './types.ts';
-import {
-  Sparkles,
-  CheckCircle,
-  RefreshCw,
-  Zap,
-  ShieldCheck,
-} from 'lucide-react';
+import { ImageQueueItem, UpscaleSettings, UpscaleResultData } from './types.ts';
+import { Sparkles, CheckCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { REPO_URL } from './config.ts';
 
-export default function App() {
-  const [settings, setSettings] = useState<UpscaleSettings>({
-    scale: 2,
-    preset: 'photo',
-    sharpness: 45,
-    denoise: 20,
-    detailBoost: 50,
-    contrast: 0,
-    brightness: 0,
-    saturation: 0,
-    format: 'png',
-    quality: 95,
-    autoDeleteOnDownload: true,
+const DEFAULT_SETTINGS: UpscaleSettings = {
+  scale: 2,
+  preset: 'photo',
+  sharpness: 45,
+  denoise: 20,
+  format: 'png',
+  quality: 95,
+};
+
+const MAX_FILE_BYTES = 35 * 1024 * 1024;
+
+const outputName = (name: string, result: UpscaleResultData) =>
+  `${name.replace(/\.[^/.]+$/, '')}_upscaled_${result.scale}x.${result.format}`;
+
+// Reads natural dimensions of an image URL. Resolves null when the image can't be decoded.
+const getImageDimensions = (url: string): Promise<{ width: number; height: number } | null> =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve(null);
+    img.src = url;
   });
 
+const blobToDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+
+export default function App() {
+  const [settings, setSettings] = useState<UpscaleSettings>(DEFAULT_SETTINGS);
   const [queue, setQueue] = useState<ImageQueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDocsOpen, setIsDocsOpen] = useState(false);
-  const [isProcessingAny, setIsProcessingAny] = useState(false);
+  const [activeJobs, setActiveJobs] = useState(0);
   const [isGeneratingZip, setIsGeneratingZip] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
 
-  const showToast = (msg: string) => {
+  const isProcessingAny = activeJobs > 0;
+
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
-
-  // Helper to read image dimensions
-  const getImageDimensions = (url: string): Promise<{ width: number; height: number }> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-      img.onerror = () => resolve({ width: 0, height: 0 });
-      img.src = url;
-    });
-  };
-
-  // Load initial benchmark sample into queue as IDLE on mount
-  useEffect(() => {
-    if (queue.length === 0) {
-      const sample = SAMPLE_IMAGES[0];
-      const itemId = crypto.randomUUID();
-      const newItem: ImageQueueItem = {
-        id: itemId,
-        name: `${sample.name}.jpg`,
-        previewUrl: sample.url,
-        originalSize: 11425,
-        originalWidth: 400,
-        originalHeight: 300,
-        status: 'idle',
-        progress: 0,
-        isSample: true,
-        samplePath: sample.serverPath,
-        settingsSnapshot: {
-          ...settings,
-          preset: sample.recommendedPreset,
-        },
-      };
-      setQueue([newItem]);
-      setSelectedId(itemId);
-    }
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToastMessage(null), 3000);
   }, []);
 
-  // Global paste handler (Ctrl+V anywhere on page)
+  const addItems = useCallback((items: ImageQueueItem[]) => {
+    setQueue((prev) => [...prev, ...items]);
+    if (items.length > 0) setSelectedId(items[0].id);
+  }, []);
+
+  // Load the first benchmark sample on mount so the page is useful immediately.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const item = await buildSampleItem(SAMPLE_IMAGES[0], DEFAULT_SETTINGS);
+      if (!cancelled && item) addItems([item]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Handle uploaded files
+  const handleFilesSelected = useCallback(
+    async (files: File[]) => {
+      const newItems: ImageQueueItem[] = [];
+      for (const file of files) {
+        const previewUrl = URL.createObjectURL(file);
+        const dims = await getImageDimensions(previewUrl);
+        if (!dims) {
+          URL.revokeObjectURL(previewUrl);
+          showToast(`"${file.name}" could not be read as an image`);
+          continue;
+        }
+        newItems.push({
+          id: crypto.randomUUID(),
+          name: file.name,
+          file,
+          previewUrl,
+          originalWidth: dims.width,
+          originalHeight: dims.height,
+          originalSize: file.size,
+          status: 'idle',
+          progress: 0,
+          settingsSnapshot: { ...settings },
+        });
+      }
+      if (newItems.length > 0) {
+        addItems(newItems);
+        showToast(`Added ${newItems.length} image${newItems.length > 1 ? 's' : ''}`);
+      }
+    },
+    [settings, addItems, showToast]
+  );
+
+  // Paste images anywhere on the page
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       if (!e.clipboardData) return;
-      const items = e.clipboardData.items;
       const files: File[] = [];
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith('image/')) {
-          const file = items[i].getAsFile();
+      for (const item of Array.from(e.clipboardData.items)) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
           if (file) files.push(file);
         }
       }
-      if (files.length > 0) {
-        handleFilesSelected(files);
-      }
+      if (files.length > 0) handleFilesSelected(files);
     };
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [settings]);
+  }, [handleFilesSelected]);
 
-  // Handle uploaded files
-  const handleFilesSelected = async (files: File[]) => {
-    const newItems: ImageQueueItem[] = [];
-
-    for (const file of files) {
-      const previewUrl = URL.createObjectURL(file);
-      const dims = await getImageDimensions(previewUrl);
-
-      newItems.push({
-        id: crypto.randomUUID(),
-        name: file.name,
-        file,
-        previewUrl,
-        originalWidth: dims.width || 800,
-        originalHeight: dims.height || 600,
-        originalSize: file.size,
-        status: 'idle',
-        progress: 0,
-        settingsSnapshot: { ...settings },
-      });
-    }
-
-    setQueue((prev) => [...prev, ...newItems]);
-    if (newItems.length > 0) {
-      setSelectedId(newItems[0].id);
-      showToast(`Added ${newItems.length} image${newItems.length > 1 ? 's' : ''}`);
-    }
-  };
-
-  // Select sample benchmark
   const handleSampleSelect = async (sample: SampleItem) => {
-    const itemId = crypto.randomUUID();
-    const newItem: ImageQueueItem = {
-      id: itemId,
-      name: `${sample.name}.jpg`,
-      previewUrl: sample.url,
-      originalSize: 15000,
-      originalWidth: 400,
-      originalHeight: 300,
-      status: 'idle',
-      progress: 0,
-      isSample: true,
-      samplePath: sample.serverPath,
-      settingsSnapshot: {
-        ...settings,
-        preset: sample.recommendedPreset,
-      },
-    };
-
-    setQueue((prev) => [newItem, ...prev.filter((i) => i.id !== itemId)]);
-    setSelectedId(itemId);
+    const item = await buildSampleItem(sample, settings);
+    if (item) addItems([item]);
   };
 
-  // Process a queue item
-  const processItem = async (item: ImageQueueItem, customSettings?: UpscaleSettings) => {
-    const activeOpts = customSettings || item.settingsSnapshot;
-
+  // Upscale one queue item through the server.
+  const processItem = async (item: ImageQueueItem, opts: UpscaleSettings) => {
+    setActiveJobs((n) => n + 1);
     setQueue((prev) =>
-      prev.map((i) => (i.id === item.id ? { ...i, status: 'processing', progress: 30 } : i))
+      prev.map((i) => (i.id === item.id ? { ...i, status: 'processing', progress: 0, errorMessage: undefined } : i))
     );
-    setIsProcessingAny(true);
 
     try {
-      // 1. Get base64 or file
-      let base64Image = '';
-      if (item.file) {
-        base64Image = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(item.file!);
-        });
-      } else if (item.previewUrl) {
-        const resp = await fetch(item.previewUrl);
-        const blob = await resp.blob();
-        base64Image = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      }
+      const source: Blob = item.file ?? (await fetch(item.previewUrl).then((r) => r.blob()));
+      const base64Image = await blobToDataUrl(source);
 
-      setQueue((prev) =>
-        prev.map((i) => (i.id === item.id ? { ...i, progress: 60 } : i))
-      );
-
-      // 2. Call /api/upscale with JSON (Universal Vercel + Node support)
       const res = await fetch('/api/upscale', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           image: base64Image,
           name: item.name,
-          scale: activeOpts.scale,
-          preset: activeOpts.preset,
-          sharpness: activeOpts.sharpness,
-          denoise: activeOpts.denoise,
-          format: activeOpts.format,
-          quality: activeOpts.quality,
+          scale: opts.scale,
+          preset: opts.preset,
+          sharpness: opts.sharpness,
+          denoise: opts.denoise,
+          format: opts.format,
+          quality: opts.quality,
         }),
       });
 
       const contentType = res.headers.get('content-type') || '';
-      let resultData: any;
-
-      if (contentType.includes('application/json')) {
-        resultData = await res.json();
-      } else {
+      if (!contentType.includes('application/json')) {
         const text = await res.text();
         throw new Error(
-          res.ok
-            ? 'Unexpected non-JSON response from server'
-            : `Server returned error (${res.status}): ${text.slice(0, 100)}`
+          res.ok ? 'Unexpected non-JSON response from server' : `Server error (${res.status}): ${text.slice(0, 100)}`
         );
       }
-
+      const resultData = await res.json();
       if (!res.ok) {
         throw new Error(resultData?.error || `Upload failed with status ${res.status}`);
       }
 
-      // Update queue item
       setQueue((prev) =>
         prev.map((i) =>
           i.id === item.id
-            ? {
-                ...i,
-                status: 'success',
-                progress: 100,
-                result: resultData as UpscaleResultData,
-                settingsSnapshot: activeOpts,
-              }
+            ? { ...i, status: 'success', progress: 100, result: resultData as UpscaleResultData, settingsSnapshot: opts }
             : i
         )
       );
-      showToast(`Upscaled to ${resultData.scale}x in ${resultData.processingTimeMs}ms`);
+      showToast(
+        resultData.engine === 'esrgan'
+          ? `AI upscaled to ${resultData.scale}x in ${(resultData.processingTimeMs / 1000).toFixed(1)}s`
+          : resultData.engineNote || `Upscaled to ${resultData.scale}x`
+      );
     } catch (error: any) {
       console.error('Processing error:', error);
-      const msg = error.message || 'Processing failed';
+      const msg = error?.message || 'Processing failed';
       setQueue((prev) =>
-        prev.map((i) =>
-          i.id === item.id
-            ? {
-                ...i,
-                status: 'error',
-                errorMessage: msg,
-              }
-            : i
-        )
+        prev.map((i) => (i.id === item.id ? { ...i, status: 'error', errorMessage: msg } : i))
       );
       showToast(`Error: ${msg}`);
     } finally {
-      setIsProcessingAny(false);
+      setActiveJobs((n) => n - 1);
     }
   };
 
-  // Upscale all idle items
   const handleProcessAll = async () => {
-    const idleItems = queue.filter((i) => i.status === 'idle');
-    if (idleItems.length === 0) return;
-
+    const idleItems = queue.filter((i) => i.status === 'idle' || i.status === 'error');
     for (const item of idleItems) {
       await processItem(item, settings);
     }
   };
 
-  // Instant client-side download: zero server round trips, 100% reliable on Vercel
+  // Instant client-side download from the result data URL.
   const handleDownloadItem = (item: ImageQueueItem) => {
-    if (!item.result) return;
-
-    const downloadSrc = item.result.dataUrl || item.result.downloadUrl;
-    const filename = `${item.name.replace(/\.[^/.]+$/, '')}_upscaled_${item.result.scale}x.${item.result.format}`;
-
+    if (!item.result?.dataUrl) return;
+    const filename = outputName(item.name, item.result);
     const link = document.createElement('a');
-    link.href = downloadSrc;
+    link.href = item.result.dataUrl;
     link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
     showToast(`Downloaded ${filename}`);
   };
 
-  // Client-side ZIP generation with JSZip: zero server memory load, zero Vercel payload limits
   const handleDownloadAllZip = async () => {
-    const completedItems = queue.filter((i) => i.status === 'success' && i.result);
+    const completedItems = queue.filter((i) => i.status === 'success' && i.result?.dataUrl);
     if (completedItems.length === 0) return;
 
     setIsGeneratingZip(true);
     try {
       const zip = new JSZip();
-
       for (const item of completedItems) {
-        if (item.result?.dataUrl) {
-          const base64Data = item.result.dataUrl.split(',')[1];
-          const filename = `${item.name.replace(/\.[^/.]+$/, '')}_upscaled_${item.result.scale}x.${item.result.format}`;
-          zip.file(filename, base64Data, { base64: true });
-        }
+        const base64Data = item.result!.dataUrl!.split(',')[1];
+        zip.file(outputName(item.name, item.result!), base64Data, { base64: true });
       }
-
       const blob = await zip.generateAsync({ type: 'blob' });
-      const url = window.URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `OpenUpscale_Batch_${Date.now()}.zip`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
-      showToast(`Downloaded ${completedItems.length} images as ZIP archive`);
+      URL.revokeObjectURL(url);
+      showToast(`Downloaded ${completedItems.length} image${completedItems.length > 1 ? 's' : ''} as ZIP`);
     } catch (error: any) {
-      showToast(`ZIP error: ${error.message}`);
+      showToast(`ZIP error: ${error?.message || 'unknown error'}`);
     } finally {
       setIsGeneratingZip(false);
     }
   };
 
-  // Remove single item
   const handleRemoveItem = (id: string) => {
-    setQueue((prev) => prev.filter((i) => i.id !== id));
-    if (selectedId === id) {
-      const remaining = queue.filter((i) => i.id !== id);
-      setSelectedId(remaining.length > 0 ? remaining[0].id : null);
-    }
+    const removed = queue.find((i) => i.id === id);
+    if (removed?.previewUrl.startsWith('blob:')) URL.revokeObjectURL(removed.previewUrl);
+    const remaining = queue.filter((i) => i.id !== id);
+    setQueue(remaining);
+    if (selectedId === id) setSelectedId(remaining[0]?.id ?? null);
   };
 
-  // Clear all
   const handleClearAll = () => {
+    queue.forEach((i) => i.previewUrl.startsWith('blob:') && URL.revokeObjectURL(i.previewUrl));
     setQueue([]);
     setSelectedId(null);
     showToast('Queue cleared');
@@ -341,38 +262,29 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0b0f17] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
-      {/* Top Bar Navigation */}
-      <Header onOpenDocs={() => setIsDocsOpen(true)} activeCount={queue.length} />
+      <Header onOpenDocs={() => setIsDocsOpen(true)} />
 
-      {/* Main Container */}
-      <main className="flex-1 mx-auto w-full max-w-7xl px-3.5 py-5 sm:px-6 space-y-6">
+      <main id="upscaler" className="flex-1 mx-auto w-full max-w-7xl px-3.5 py-5 sm:px-6 space-y-6">
         {selectedItem ? (
           <div className="space-y-5">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-              {/* Left 2 Cols: Comparison Slider */}
-              <div className="lg:col-span-2 space-y-3">
+              <div className="lg:col-span-2">
                 <ComparisonSlider
                   item={selectedItem}
                   onDownload={handleDownloadItem}
                   onDelete={handleRemoveItem}
-                  autoDeleteOnDownload={settings.autoDeleteOnDownload}
-                  onReUpscale={() => processItem(selectedItem, settings)}
-                  isProcessing={selectedItem.status === 'processing'}
                 />
               </div>
 
-              {/* Right 1 Col: Settings & Action */}
               <div className="lg:col-span-1 space-y-3">
                 <SettingsPanel
                   settings={settings}
                   onChange={(newSettings) => {
                     setSettings(newSettings);
-                    if (selectedItem && selectedItem.status === 'idle') {
+                    if (selectedItem.status === 'idle') {
                       setQueue((prev) =>
                         prev.map((i) =>
-                          i.id === selectedItem.id
-                            ? { ...i, settingsSnapshot: { ...newSettings } }
-                            : i
+                          i.id === selectedItem.id ? { ...i, settingsSnapshot: { ...newSettings } } : i
                         )
                       );
                     }
@@ -385,35 +297,40 @@ export default function App() {
                   }
                 />
 
-                {/* Primary Action Button */}
-                {selectedItem.status === 'idle' ? (
+                {(selectedItem.status === 'idle' || selectedItem.status === 'error') && (
                   <button
+                    type="button"
                     onClick={() => processItem(selectedItem, settings)}
                     disabled={isProcessingAny}
-                    className="w-full py-3 px-4 rounded-xl font-bold text-sm text-slate-950 bg-gradient-to-r from-cyan-400 to-indigo-400 hover:from-cyan-300 hover:to-indigo-300 shadow-md shadow-cyan-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+                    className="w-full py-3 px-4 rounded-xl font-bold text-sm text-slate-950 bg-gradient-to-r from-cyan-400 to-indigo-400 hover:from-cyan-300 hover:to-indigo-300 shadow-md shadow-cyan-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                   >
-                    <Sparkles className="h-4 w-4" />
+                    <Sparkles className="h-4 w-4" aria-hidden="true" />
                     <span>Upscale Image ({settings.scale}x)</span>
                   </button>
-                ) : selectedItem.status === 'processing' ? (
-                  <div className="w-full py-3 px-4 rounded-xl font-medium text-sm text-cyan-300 bg-slate-800 border border-cyan-500/30 flex items-center justify-center gap-2">
-                    <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
-                    <span>Processing in Cloud...</span>
+                )}
+                {selectedItem.status === 'processing' && (
+                  <div
+                    role="status"
+                    className="w-full py-3 px-4 rounded-xl font-medium text-sm text-cyan-300 bg-slate-800 border border-cyan-500/30 flex items-center justify-center gap-2"
+                  >
+                    <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" aria-hidden="true" />
+                    <span>Enhancing with AI…</span>
                   </div>
-                ) : selectedItem.status === 'success' ? (
+                )}
+                {selectedItem.status === 'success' && (
                   <button
+                    type="button"
                     onClick={() => processItem(selectedItem, settings)}
                     disabled={isProcessingAny}
-                    className="w-full py-2.5 px-4 rounded-xl font-medium text-xs text-slate-300 bg-slate-800 hover:bg-slate-750 hover:text-white border border-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                    className="w-full py-2.5 px-4 rounded-xl font-medium text-xs text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <RefreshCw className="h-3.5 w-3.5 text-cyan-400" />
-                    <span>Re-Upscale with Current Settings</span>
+                    <RefreshCw className="h-3.5 w-3.5 text-cyan-400" aria-hidden="true" />
+                    <span>Re-upscale with current settings</span>
                   </button>
-                ) : null}
+                )}
               </div>
             </div>
 
-            {/* Batch Queue Bar */}
             <BatchQueue
               items={queue}
               selectedId={selectedId}
@@ -431,7 +348,6 @@ export default function App() {
               isGeneratingZip={isGeneratingZip}
             />
 
-            {/* Upload Zone */}
             <UploadZone
               onFilesSelected={handleFilesSelected}
               onSampleSelected={handleSampleSelect}
@@ -439,18 +355,13 @@ export default function App() {
             />
           </div>
         ) : (
-          /* Empty State */
           <div className="space-y-6 max-w-3xl mx-auto py-8">
             <div className="text-center space-y-2">
-              <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-                Cloud Image Upscaler
-              </h1>
+              <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">AI Image Upscaler</h1>
               <p className="text-sm text-slate-400 max-w-lg mx-auto">
-                Free open-source super-resolution. Zero local CPU load, instant batch downloads,
-                and automatic file deletion.
+                Add detail and sharpen photos, art and documents at 2x, 4x or 8x. Batch processing with instant downloads.
               </p>
             </div>
-
             <UploadZone
               onFilesSelected={handleFilesSelected}
               onSampleSelected={handleSampleSelect}
@@ -459,60 +370,67 @@ export default function App() {
           </div>
         )}
 
-        {/* Clean Privacy Callout */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
-            <span>100% Privacy: Files are processed ephemerally and never retained. Zero tracking.</span>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <Zap className="h-4 w-4 text-cyan-400 shrink-0" />
-            <span>Vercel Serverless Ready · Lanczos-3 Sinc Resampling</span>
-          </div>
-        </div>
+        <p className="flex items-center justify-center gap-2 text-xs text-slate-500">
+          <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+          <span>Images are processed in server memory and never written to disk.</span>
+        </p>
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-950/80 py-5 text-xs text-slate-400">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-200">OpenUpscale</span>
-            <span>·</span>
-            <span>Free Open Source Cloud Upscaler</span>
-            <span>·</span>
-            <span className="font-mono text-cyan-400">MIT</span>
+            <span aria-hidden="true">·</span>
+            <span>Free, open-source, MIT licensed</span>
           </div>
-
           <div className="flex items-center gap-5">
-            <button
-              onClick={() => setIsDocsOpen(true)}
-              className="hover:text-white transition-colors cursor-pointer"
-            >
-              Docs & Models
+            <button onClick={() => setIsDocsOpen(true)} className="hover:text-white transition-colors cursor-pointer">
+              About & API
             </button>
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-white transition-colors"
-            >
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className="hover:text-white transition-colors">
               GitHub
             </a>
-            <span>Zero Tracking</span>
           </div>
         </div>
       </footer>
 
-      {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs shadow-2xl animate-fade-in">
-          <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 right-5 z-50 max-w-[calc(100vw-2.5rem)] flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs shadow-2xl animate-fade-in"
+        >
+          <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" aria-hidden="true" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Docs Modal */}
       <OpenSourceDocsModal isOpen={isDocsOpen} onClose={() => setIsDocsOpen(false)} />
     </div>
   );
+}
+
+// Builds a queue item for a bundled benchmark sample, using its real size and dimensions.
+async function buildSampleItem(sample: SampleItem, settings: UpscaleSettings): Promise<ImageQueueItem | null> {
+  const dims = await getImageDimensions(sample.url);
+  if (!dims) return null;
+  let size = 0;
+  try {
+    size = (await fetch(sample.url).then((r) => r.blob())).size;
+  } catch {
+    size = 0;
+  }
+  return {
+    id: crypto.randomUUID(),
+    name: `${sample.name}.jpg`,
+    previewUrl: sample.url,
+    originalWidth: dims.width,
+    originalHeight: dims.height,
+    originalSize: size,
+    status: 'idle',
+    progress: 0,
+    isSample: true,
+    samplePath: sample.serverPath,
+    settingsSnapshot: { ...settings, preset: sample.recommendedPreset },
+  };
 }

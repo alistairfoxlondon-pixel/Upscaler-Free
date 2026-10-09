@@ -58,6 +58,8 @@ export default async function handler(req: any, res: any) {
       upscaledSize: result.upscaledSize,
       processingTimeMs: result.processingTimeMs,
       scale: options.scale,
+      engine: result.engine,
+      engineNote: result.engineNote,
     });
   } catch (error: any) {
     console.error('Vercel upscale error:', error);

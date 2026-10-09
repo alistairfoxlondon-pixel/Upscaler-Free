@@ -2,11 +2,11 @@ export default function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.status(200).json({
     status: 'online',
-    engine: 'OpenUpscale Cloud Super-Resolution',
+    engine: 'OpenUpscale ESRGAN Super-Resolution',
     deployment: 'Vercel Serverless / Edge Compatible',
     libraries: [
-      { name: 'Sharp (libvips)', role: 'Lanczos-3 & SIMD Super-Resolution' },
-      { name: 'JSZip', role: 'In-Memory Batch Archiving' },
+      { name: 'ESRGAN (UpscalerJS slim models)', role: 'Neural super-resolution (2x, 4x, 8x)' },
+      { name: 'Sharp (libvips)', role: 'Decoding, Lanczos-3 fallback resize, encoding' },
     ],
     supportedFormats: ['JPG', 'PNG', 'WEBP', 'AVIF', 'BMP', 'TIFF'],
     exportFormats: ['JPG', 'PNG', 'WEBP'],

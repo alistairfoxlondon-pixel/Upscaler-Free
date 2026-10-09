@@ -9,8 +9,7 @@ import {
   SplitSquareVertical,
   Columns,
   Eye,
-  Check,
-  Share2,
+  AlertTriangle,
 } from 'lucide-react';
 import { ImageQueueItem } from '../types.ts';
 
@@ -18,23 +17,15 @@ interface ComparisonSliderProps {
   item: ImageQueueItem;
   onDownload: (item: ImageQueueItem) => void;
   onDelete: (id: string) => void;
-  autoDeleteOnDownload: boolean;
-  onReUpscale?: () => void;
-  isProcessing?: boolean;
 }
 
-export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
-  item,
-  onDownload,
-  onDelete,
-}) => {
+export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({ item, onDownload, onDelete }) => {
   const [sliderPosition, setSliderPosition] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
-  const [viewMode, setViewMode] = useState<'split' | 'side-by-side' | 'enhanced'>('split');
+  const [viewMode, setViewMode] = useState<'split' | 'side-by-side'>('split');
   const [isZoomed, setIsZoomed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isHoldingOriginal, setIsHoldingOriginal] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -52,7 +43,7 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
   const handlePointerDown = (e: React.PointerEvent) => {
     setIsDragging(true);
     updateSliderPosition(e.clientX);
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -68,18 +59,29 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
     } catch {}
   };
 
-  // Keyboard shortcut: Spacebar hold to temporarily reveal Original
+  // Arrow keys move the divider when it has focus (keyboard and screen-reader access).
+  const handleHandleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      const step = e.shiftKey ? 10 : 2;
+      setSliderPosition((p) => Math.max(0, Math.min(100, p + (e.key === 'ArrowLeft' ? -step : step))));
+    }
+  };
+
+  // Spacebar hold reveals the original. Ignored while a control has focus so Space still activates it.
   useEffect(() => {
+    const isControl = () => {
+      const tag = document.activeElement?.tagName;
+      return tag === 'INPUT' || tag === 'BUTTON' || tag === 'TEXTAREA' || tag === 'SELECT';
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !e.repeat && document.activeElement?.tagName !== 'INPUT') {
+      if (e.code === 'Space' && !e.repeat && !isControl()) {
         e.preventDefault();
         setIsHoldingOriginal(true);
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        setIsHoldingOriginal(false);
-      }
+      if (e.code === 'Space') setIsHoldingOriginal(false);
     };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -97,15 +99,12 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
   };
 
-  const handleShare = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
-    }
-  };
-
   const effectiveMode = isHoldingOriginal ? 'original' : viewMode;
+  const engineLabel = item.result
+    ? item.result.engine === 'esrgan'
+      ? `${item.result.scale}x AI`
+      : `${item.result.scale}x Resize`
+    : 'Original';
 
   return (
     <div
@@ -120,59 +119,60 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
             {item.name}
           </span>
           <span className="text-xs text-slate-500 font-mono">·</span>
-          <span className="text-xs font-mono text-cyan-400 font-medium shrink-0">
-            {item.result ? `${item.result.scale}x Enhanced` : 'Original'}
-          </span>
+          <span className="text-xs font-mono text-cyan-400 font-medium shrink-0">{engineLabel}</span>
         </div>
 
         {/* View Controls */}
         <div className="flex items-center gap-1.5">
           <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800">
             <button
+              type="button"
               onClick={() => setViewMode('split')}
+              aria-pressed={viewMode === 'split'}
               className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
-                viewMode === 'split'
-                  ? 'bg-cyan-500/20 text-cyan-300'
-                  : 'text-slate-400 hover:text-white'
+                viewMode === 'split' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-white'
               }`}
             >
-              <SplitSquareVertical className="h-3.5 w-3.5" />
+              <SplitSquareVertical className="h-3.5 w-3.5" aria-hidden="true" />
               <span className="hidden sm:inline">Split</span>
             </button>
             <button
+              type="button"
               onClick={() => setViewMode('side-by-side')}
+              aria-pressed={viewMode === 'side-by-side'}
               className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
-                viewMode === 'side-by-side'
-                  ? 'bg-cyan-500/20 text-cyan-300'
-                  : 'text-slate-400 hover:text-white'
+                viewMode === 'side-by-side' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Columns className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Side by Side</span>
+              <Columns className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Side by side</span>
             </button>
           </div>
 
           {item.result && (
             <button
-              onMouseDown={() => setIsHoldingOriginal(true)}
-              onMouseUp={() => setIsHoldingOriginal(false)}
-              onTouchStart={() => setIsHoldingOriginal(true)}
-              onTouchEnd={() => setIsHoldingOriginal(false)}
+              type="button"
+              onPointerDown={() => setIsHoldingOriginal(true)}
+              onPointerUp={() => setIsHoldingOriginal(false)}
+              onPointerLeave={() => setIsHoldingOriginal(false)}
+              onPointerCancel={() => setIsHoldingOriginal(false)}
               className={`hidden sm:flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors select-none cursor-pointer ${
                 isHoldingOriginal
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                   : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
               }`}
-              title="Hold to view original (Spacebar)"
+              title="Hold to view the original (Space)"
             >
-              <Eye className="h-3 w-3" />
-              <span>Hold for Original</span>
+              <Eye className="h-3 w-3" aria-hidden="true" />
+              <span>Hold for original</span>
             </button>
           )}
 
           {/* 100% Zoom toggle for pixel inspection */}
           <button
+            type="button"
             onClick={() => setIsZoomed(!isZoomed)}
+            aria-pressed={isZoomed}
             className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
               isZoomed
                 ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
@@ -180,16 +180,18 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
             }`}
             title="Inspect at 100% actual pixels"
           >
-            {isZoomed ? <ZoomOut className="h-3.5 w-3.5" /> : <ZoomIn className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">{isZoomed ? 'Fit' : '100% Pixels'}</span>
+            {isZoomed ? <ZoomOut className="h-3.5 w-3.5" aria-hidden="true" /> : <ZoomIn className="h-3.5 w-3.5" aria-hidden="true" />}
+            <span className="hidden sm:inline">{isZoomed ? 'Fit' : '100% pixels'}</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setIsFullscreen(!isFullscreen)}
             className="p-1.5 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-lg transition-colors cursor-pointer"
-            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >
-            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />}
           </button>
         </div>
       </div>
@@ -220,7 +222,7 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
                 className="max-h-full max-w-full object-contain pointer-events-none block"
               />
 
-              {/* Layer 2: Upscaled Enhanced Image (Clipped) */}
+              {/* Layer 2: Upscaled image (clipped to the divider) */}
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
@@ -229,7 +231,7 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
               >
                 <img
                   src={enhancedSrc}
-                  alt="Enhanced"
+                  alt="Upscaled"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-contain pointer-events-none block"
                 />
@@ -244,10 +246,17 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
 
                 {/* Draggable Divider Handle */}
                 <div
-                  className="pointer-events-auto absolute top-1/2 -left-4 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/40 cursor-ew-resize hover:scale-110 active:scale-95 transition-transform"
-                  title="Drag left or right"
+                  role="slider"
+                  tabIndex={0}
+                  aria-label="Comparison position"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(sliderPosition)}
+                  onKeyDown={handleHandleKeyDown}
+                  className="pointer-events-auto absolute top-1/2 -left-4 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/40 cursor-ew-resize hover:scale-110 active:scale-95 transition-transform focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  title="Drag or use ← → keys"
                 >
-                  <SplitSquareVertical className="h-4 w-4" />
+                  <SplitSquareVertical className="h-4 w-4" aria-hidden="true" />
                 </div>
               </div>
             </div>
@@ -256,9 +265,11 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
             <div className="absolute bottom-3 left-3 z-10 rounded-md bg-slate-950/80 px-2 py-0.5 text-[11px] font-mono text-slate-300 border border-slate-800 pointer-events-none">
               Original ({item.originalWidth ? `${item.originalWidth}×${item.originalHeight}` : 'Before'})
             </div>
-            <div className="absolute bottom-3 right-3 z-10 rounded-md bg-cyan-950/90 px-2 py-0.5 text-[11px] font-mono text-cyan-300 border border-cyan-800/80 pointer-events-none font-semibold">
-              {item.result ? `${item.result.scale}x Enhanced (${item.result.upscaledWidth}×${item.result.upscaledHeight})` : 'After'}
-            </div>
+            {item.result && (
+              <div className="absolute bottom-3 right-3 z-10 rounded-md bg-cyan-950/90 px-2 py-0.5 text-[11px] font-mono text-cyan-300 border border-cyan-800/80 pointer-events-none font-semibold">
+                {`${engineLabel} (${item.result.upscaledWidth}×${item.result.upscaledHeight})`}
+              </div>
+            )}
           </div>
         )}
 
@@ -279,12 +290,12 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
             <div className="relative flex items-center justify-center p-2 overflow-hidden bg-slate-950/30">
               <img
                 src={enhancedSrc}
-                alt="Enhanced"
+                alt="Upscaled"
                 referrerPolicy="no-referrer"
                 className={`max-h-full max-w-full object-contain ${isZoomed ? 'scale-150' : ''}`}
               />
               <span className="absolute bottom-2 right-2 bg-cyan-950/90 px-2 py-0.5 text-[10px] sm:text-xs font-mono text-cyan-300 border border-cyan-800 rounded font-semibold">
-                Enhanced ({item.result?.scale || 2}x · {item.result?.upscaledWidth}×{item.result?.upscaledHeight})
+                {engineLabel} · {item.result?.upscaledWidth}×{item.result?.upscaledHeight}
               </span>
             </div>
           </div>
@@ -300,7 +311,7 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
               className={`max-h-full max-w-full object-contain ${isZoomed ? 'scale-150' : ''}`}
             />
             <span className="absolute bottom-3 left-3 bg-amber-950/90 px-2.5 py-1 text-xs font-mono text-amber-300 border border-amber-800 rounded font-semibold">
-              Original Unprocessed Source
+              Original
             </span>
           </div>
         )}
@@ -338,9 +349,18 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
                 <div className="flex items-center gap-1.5">
                   <span className="text-slate-500">Time:</span>
                   <span className="font-mono tabular-nums text-emerald-400">
-                    {item.result.processingTimeMs}ms
+                    {item.result.processingTimeMs >= 1000
+                      ? `${(item.result.processingTimeMs / 1000).toFixed(1)}s`
+                      : `${item.result.processingTimeMs}ms`}
                   </span>
                 </div>
+
+                {item.result.engineNote && (
+                  <div className="flex items-center gap-1.5 text-amber-300">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>{item.result.engineNote}</span>
+                  </div>
+                )}
               </>
             ) : (
               <div>
@@ -357,14 +377,6 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
           <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
             {item.result && (
               <>
-                <button
-                  onClick={handleShare}
-                  className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-lg transition-colors cursor-pointer"
-                  title="Share"
-                >
-                  {copiedLink ? <Check className="h-4 w-4 text-emerald-400" /> : <Share2 className="h-4 w-4" />}
-                </button>
-
                 <button
                   onClick={() => onDownload(item)}
                   className="flex items-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg shadow-md shadow-cyan-400/20 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"

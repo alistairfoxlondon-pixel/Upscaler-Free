@@ -70,6 +70,15 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-label="Add images: drop files here, click to browse, or paste"
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
         onClick={() => !disabled && fileInputRef.current?.click()}
         className={`relative flex flex-col items-center justify-center p-8 sm:p-10 rounded-2xl border-2 border-dashed transition-all cursor-pointer text-center ${
           isDragOver
@@ -95,7 +104,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
           Drop images here or <span className="text-cyan-400 hover:underline">browse</span>
         </h3>
         <p className="text-xs text-slate-400 mb-3">
-          Paste with Ctrl+V · Batch support up to 20 images · Up to 35 MB each
+          Paste with Ctrl+V · Up to 35 MB per image · Batch supported
         </p>
 
         {/* Concise format tags */}
@@ -138,6 +147,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
               type="button"
               disabled={disabled}
               onClick={() => onSampleSelected(sample)}
+              aria-label={`Load sample: ${sample.name}`}
               className="group relative flex items-center gap-2.5 p-2 rounded-lg border border-slate-800/90 bg-slate-950/60 hover:border-cyan-500/40 hover:bg-slate-900 transition-all text-left cursor-pointer"
             >
               <img

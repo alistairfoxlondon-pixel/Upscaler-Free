@@ -73,13 +73,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       preset: 'photo',
       sharpness: 45,
       denoise: 20,
-      detailBoost: 50,
-      contrast: 0,
-      brightness: 0,
-      saturation: 0,
       format: 'png',
       quality: 95,
-      autoDeleteOnDownload: true,
     });
   };
 
@@ -102,6 +97,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           disabled={disabled}
           className="text-xs text-slate-400 hover:text-cyan-400 flex items-center gap-1 transition-colors disabled:opacity-40 cursor-pointer"
           title="Reset defaults"
+          aria-label="Reset settings to defaults"
         >
           <RotateCcw className="h-3 w-3" />
           <span>Reset</span>
@@ -125,6 +121,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <button
                 key={factor}
                 type="button"
+                aria-pressed={isSelected}
                 disabled={disabled}
                 onClick={() => onChange({ ...settings, scale: factor })}
                 className={`py-2 px-3 rounded-xl text-center border transition-all cursor-pointer ${
@@ -135,7 +132,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               >
                 <div className="text-sm font-bold font-mono">{factor}x</div>
                 <div className="text-[10px] text-slate-400">
-                  {factor === 2 ? 'Fast' : factor === 4 ? 'Ultra HD' : '8x Max'}
+                  {factor === 2 ? 'Fast' : factor === 4 ? 'Balanced' : 'Slowest'}
                 </div>
               </button>
             );
@@ -153,6 +150,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <button
                 key={p.id}
                 type="button"
+                aria-pressed={isSelected}
                 disabled={disabled}
                 onClick={() => handlePresetSelect(p.id)}
                 className={`py-2 px-2 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -179,6 +177,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
           <input
             type="range"
+            aria-label="Sharpness"
             min="0"
             max="100"
             value={settings.sharpness}
@@ -196,6 +195,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
           <input
             type="range"
+            aria-label="Artifact denoise"
             min="0"
             max="100"
             value={settings.denoise}
@@ -216,6 +216,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <button
                 key={fmt}
                 type="button"
+                aria-pressed={isSelected}
                 disabled={disabled}
                 onClick={() => onChange({ ...settings, format: fmt })}
                 className={`py-1.5 px-3 rounded-lg text-center font-mono uppercase text-xs font-semibold border transition-all cursor-pointer ${
@@ -238,7 +239,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
             <input
               type="range"
-              min="80"
+              aria-label="Quality"
+              min="70"
               max="100"
               value={settings.quality}
               disabled={disabled}

@@ -1,398 +1,141 @@
-import React, { useState } from 'react';
-import {
-  X,
-  BookOpen,
-  Code2,
-  Terminal,
-  Cpu,
-  Shield,
-  ExternalLink,
-  Copy,
-  Check,
-  Server,
-  Package,
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, BookOpen, Copy, Check } from 'lucide-react';
+import { REPO_URL } from '../config.ts';
 
 interface OpenSourceDocsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const OpenSourceDocsModal: React.FC<OpenSourceDocsModalProps> = ({
-  isOpen,
-  onClose,
-}) => {
-  const [activeTab, setActiveTab] = useState<'audit' | 'pipeline' | 'deploy' | 'api'>('audit');
-  const [copiedIndex, setCopiedIndex] = useState<string | null>(null);
-
-  if (!isOpen) return null;
-
-  const copyCode = (code: string, id: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedIndex(id);
-    setTimeout(() => setCopiedIndex(null), 2000);
-  };
-
-  const curlExample = `curl -X POST https://your-domain.vercel.app/api/upscale \\
+const CURL_EXAMPLE = `curl -X POST http://localhost:3000/api/upscale \\
   -F "file=@input.jpg" \\
   -F "scale=4" \\
   -F "preset=photo" \\
-  -F "format=png" \\
-  -F "sharpness=50" \\
-  -F "denoise=30"`;
+  -F "format=png"`;
 
-  const vercelConfig = `{
-  "version": 2,
-  "builds": [
-    {
-      "src": "server.ts",
-      "use": "@vercel/node",
-      "config": {
-        "maxDuration": 60,
-        "memory": 1024
-      }
-    },
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "dist" }
-    }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/server.ts" },
-    { "src": "/(.*)", "dest": "/dist/$1" }
-  ]
-}`;
+const SELF_HOST = `npm install --legacy-peer-deps
+npm run build
+NODE_ENV=production npm start`;
 
-  const dockerfileCode = `FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
+export const OpenSourceDocsModal: React.FC<OpenSourceDocsModalProps> = ({ isOpen, onClose }) => {
+  const [copied, setCopied] = useState<string | null>(null);
 
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server.ts ./
-COPY --from=builder /app/server ./server
-EXPOSE 3000
-CMD ["npx", "tsx", "server.ts"]`;
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const copy = (text: string, id: string) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(id);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  };
+
+  const CodeBlock = ({ code, id }: { code: string; id: string }) => (
+    <div className="relative">
+      <pre className="overflow-x-auto rounded-xl bg-slate-950 border border-slate-800 p-3.5 pr-12 text-xs text-slate-300 font-mono">
+        {code}
+      </pre>
+      <button
+        type="button"
+        onClick={() => copy(code, id)}
+        aria-label="Copy to clipboard"
+        className="absolute top-2 right-2 p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-md cursor-pointer"
+      >
+        {copied === id ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="relative flex flex-col w-full max-w-4xl max-h-[88vh] rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4 bg-slate-950/70">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="docs-title"
+        onClick={(e) => e.stopPropagation()}
+        className="relative flex flex-col w-full max-w-2xl max-h-[88vh] rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden"
+      >
+        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
-              <BookOpen className="h-5 w-5" />
+              <BookOpen className="h-5 w-5" aria-hidden="true" />
             </div>
-            <div>
-              <h2 className="text-base font-bold text-white">Open Source Architecture & Docs</h2>
-              <p className="text-xs text-slate-400">
-                Audited models, open-source algorithms, privacy model, and self-hosting
-              </p>
-            </div>
+            <h2 id="docs-title" className="text-base font-bold text-white">
+              About & API
+            </h2>
           </div>
-
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close"
             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <X className="h-5 w-5" />
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-1 border-b border-slate-800 px-6 bg-slate-950/40">
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'audit'
-                ? 'border-cyan-400 text-cyan-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Open Source Audit
-          </button>
-          <button
-            onClick={() => setActiveTab('pipeline')}
-            className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'pipeline'
-                ? 'border-cyan-400 text-cyan-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Enhancement Pipeline
-          </button>
-          <button
-            onClick={() => setActiveTab('deploy')}
-            className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'deploy'
-                ? 'border-cyan-400 text-cyan-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Vercel & Docker Deploy
-          </button>
-          <button
-            onClick={() => setActiveTab('api')}
-            className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'api'
-                ? 'border-cyan-400 text-cyan-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            REST API
-          </button>
-        </div>
+        <div className="overflow-y-auto px-5 py-5 space-y-6 text-sm text-slate-300 leading-relaxed">
+          <section className="space-y-2">
+            <h3 className="font-semibold text-white">How it upscales</h3>
+            <p>
+              Images are enhanced by an ESRGAN super-resolution network (the open-source{' '}
+              <span className="font-mono text-slate-200">@upscalerjs/esrgan-slim</span> models, MIT) that runs on the
+              server with TensorFlow.js. It generates new edge and texture detail, which plain resizing cannot do.
+            </p>
+            <ul className="list-disc pl-5 space-y-1 text-slate-400">
+              <li>
+                AI runs up to 2 MP for 2x and 4x, and up to 0.25 MP for 8x. Larger images use a fast resize, and the
+                result says so.
+              </li>
+              <li>Maximum output size is 12000 px on either side.</li>
+              <li>Transparency is kept. Sharpness applies an unsharp mask after upscaling.</li>
+            </ul>
+          </section>
 
-        {/* Body Content */}
-        <div className="p-6 overflow-y-auto space-y-6 text-sm text-slate-300">
-          {/* TAB 1: AUDIT */}
-          {activeTab === 'audit' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-sm font-bold text-white mb-2">
-                  Open Source Project & Model Audit
-                </h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  We conducted an in-depth audit of leading open-source super-resolution repositories
-                  on GitHub, evaluating license compatibility, computational efficiency, and
-                  production reliability.
-                </p>
-              </div>
+          <section className="space-y-2">
+            <h3 className="font-semibold text-white">Privacy</h3>
+            <p>
+              Uploads are held in server memory only and are never written to disk. Results stay in memory for up to
+              15 minutes and are also returned to your browser for download.
+            </p>
+          </section>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-white text-xs">Real-ESRGAN</span>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
-                      BSD-3-Clause
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    Tencent ARC Lab’s deep neural model for practical blind image restoration. Uses
-                    a high-capacity RRDBNet backbone with multi-stage degradation modeling.
-                  </p>
-                  <div className="text-[11px] font-mono text-cyan-400 flex items-center gap-1">
-                    <span>Key strength:</span>
-                    <span className="text-slate-300">Artifact suppression on real photos</span>
-                  </div>
-                </div>
+          <section className="space-y-2">
+            <h3 className="font-semibold text-white">API</h3>
+            <p>
+              <span className="font-mono text-slate-200">POST /api/upscale</span> (multipart field <code>file</code>)
+              accepts <code>scale</code> (2, 4, 8), <code>preset</code>, <code>sharpness</code> (0–100),{' '}
+              <code>denoise</code> (0–100), <code>format</code> (png, jpg, webp) and <code>quality</code>. The JSON
+              response includes <code>dataUrl</code>, dimensions, timing, and <code>engine</code> (
+              <code>esrgan</code> or <code>lanczos</code>).
+            </p>
+            <CodeBlock code={CURL_EXAMPLE} id="curl" />
+          </section>
 
-                <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-white text-xs">Waifu2x</span>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
-                      MIT License
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    The pioneer convolutional network for 2D anime, manga, and digital art
-                    upscaling. Highly praised for clean linework and de-ringing.
-                  </p>
-                  <div className="text-[11px] font-mono text-cyan-400 flex items-center gap-1">
-                    <span>Key strength:</span>
-                    <span className="text-slate-300">Clean 2D vector-like edge sharpness</span>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-white text-xs">Sharp (libvips)</span>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
-                      Apache-2.0
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    High-performance SIMD-accelerated C image processing kernel. Executes
-                    high-order Lanczos-3 resampling, adaptive unsharp masking, and bilateral
-                    denoising 4-5x faster than ImageMagick with minimal memory.
-                  </p>
-                  <div className="text-[11px] font-mono text-cyan-400 flex items-center gap-1">
-                    <span>Key strength:</span>
-                    <span className="text-slate-300">Sub-second cloud latency & 0 crashes</span>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-white text-xs">JSZip</span>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
-                      MIT License
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    Streams DEFLATE compressed batch archives directly from ephemeral server memory
-                    without creating temporary files on the file system.
-                  </p>
-                  <div className="text-[11px] font-mono text-cyan-400 flex items-center gap-1">
-                    <span>Key strength:</span>
-                    <span className="text-slate-300">Streamed ZIP download without disk leaks</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: PIPELINE */}
-          {activeTab === 'pipeline' && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-white">Cloud Multi-Stage Pipeline</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Rather than forcing heavy client GPUs that cause laptops to heat up and mobile
-                browsers to reload due to out-of-memory errors, OpenUpscale processes everything in
-                an isolated cloud worker using high-precision 32-bit floating point mathematical
-                kernels:
-              </p>
-
-              <ol className="space-y-3 text-xs">
-                <li className="flex gap-3 p-3 rounded-xl bg-slate-950/50 border border-slate-800">
-                  <span className="font-mono text-cyan-400 font-bold shrink-0">01.</span>
-                  <div>
-                    <span className="font-semibold text-slate-200">Lanczos-3 Resampling:</span>
-                    <p className="text-slate-400 mt-0.5">
-                      Uses windowed sinc 3-lobe interpolation to expand spatial grid coordinates
-                      with sharp frequency response, eliminating pixelation.
-                    </p>
-                  </div>
-                </li>
-                <li className="flex gap-3 p-3 rounded-xl bg-slate-950/50 border border-slate-800">
-                  <span className="font-mono text-cyan-400 font-bold shrink-0">02.</span>
-                  <div>
-                    <span className="font-semibold text-slate-200">Bilateral & Median Denoising:</span>
-                    <p className="text-slate-400 mt-0.5">
-                      Suppresses high-frequency compression artifacts, JPEG blocking, and camera
-                      sensor noise while preserving primary edge boundaries.
-                    </p>
-                  </div>
-                </li>
-                <li className="flex gap-3 p-3 rounded-xl bg-slate-950/50 border border-slate-800">
-                  <span className="font-mono text-cyan-400 font-bold shrink-0">03.</span>
-                  <div>
-                    <span className="font-semibold text-slate-200">Adaptive Unsharp Masking:</span>
-                    <p className="text-slate-400 mt-0.5">
-                      Applies a tunable gaussian difference mask with dual thresholds (m1 for flat
-                      regions, m2 for edge contours) to prevent ringing halos.
-                    </p>
-                  </div>
-                </li>
-                <li className="flex gap-3 p-3 rounded-xl bg-slate-950/50 border border-slate-800">
-                  <span className="font-mono text-cyan-400 font-bold shrink-0">04.</span>
-                  <div>
-                    <span className="font-semibold text-slate-200">Ephemeral Memory & Auto-Purge:</span>
-                    <p className="text-slate-400 mt-0.5">
-                      Images live only in short-lived memory buffers. Automatic TTL purge triggers
-                      at 15 minutes, or immediately upon user download.
-                    </p>
-                  </div>
-                </li>
-              </ol>
-            </div>
-          )}
-
-          {/* TAB 3: DEPLOY */}
-          {activeTab === 'deploy' && (
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-bold text-white mb-1">Deploying to Vercel</h3>
-                <p className="text-xs text-slate-400">
-                  OpenUpscale is pre-configured for instant zero-config deployment to Vercel
-                  Serverless Functions or any Node.js container.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-slate-300">vercel.json</span>
-                  <button
-                    onClick={() => copyCode(vercelConfig, 'vercel')}
-                    className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
-                  >
-                    {copiedIndex === 'vercel' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    <span>{copiedIndex === 'vercel' ? 'Copied' : 'Copy Config'}</span>
-                  </button>
-                </div>
-                <pre className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 overflow-x-auto">
-                  {vercelConfig}
-                </pre>
-              </div>
-
-              <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-slate-300">Dockerfile (Self-Hosting)</span>
-                  <button
-                    onClick={() => copyCode(dockerfileCode, 'docker')}
-                    className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
-                  >
-                    {copiedIndex === 'docker' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    <span>{copiedIndex === 'docker' ? 'Copied' : 'Copy Dockerfile'}</span>
-                  </button>
-                </div>
-                <pre className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 overflow-x-auto">
-                  {dockerfileCode}
-                </pre>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: API */}
-          {activeTab === 'api' && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-white">Public REST API Endpoint</h3>
-              <p className="text-xs text-slate-400">
-                You can automate super-resolution in your CI/CD pipelines, mobile applications, or
-                scripts using standard cURL commands:
-              </p>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-slate-300">POST /api/upscale</span>
-                  <button
-                    onClick={() => copyCode(curlExample, 'curl')}
-                    className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
-                  >
-                    {copiedIndex === 'curl' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    <span>{copiedIndex === 'curl' ? 'Copied' : 'Copy cURL'}</span>
-                  </button>
-                </div>
-                <pre className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-cyan-300 overflow-x-auto">
-                  {curlExample}
-                </pre>
-              </div>
-
-              <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 space-y-1.5 text-xs">
-                <div className="font-semibold text-white">Supported Request Parameters:</div>
-                <ul className="space-y-1 font-mono text-[11px] text-slate-400 list-disc list-inside">
-                  <li><strong className="text-slate-200">file</strong>: Image binary multipart</li>
-                  <li><strong className="text-slate-200">scale</strong>: 2, 4, or 8 (default: 2)</li>
-                  <li><strong className="text-slate-200">preset</strong>: photo, digital_art, anime, document, custom</li>
-                  <li><strong className="text-slate-200">format</strong>: png, jpg, webp (default: png)</li>
-                  <li><strong className="text-slate-200">quality</strong>: 80 to 100 (default: 92)</li>
-                  <li><strong className="text-slate-200">sharpness</strong>: 0 to 100</li>
-                  <li><strong className="text-slate-200">denoise</strong>: 0 to 100</li>
-                </ul>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-slate-800 px-6 py-3.5 bg-slate-950/70 text-xs text-slate-400">
-          <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-emerald-400" />
-            <span>Open Source under MIT License · 100% Free Forever</span>
-          </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer"
-          >
-            Close
-          </button>
+          <section className="space-y-2">
+            <h3 className="font-semibold text-white">Self-host</h3>
+            <p>
+              Requires Node.js 20 or newer. Install all dependencies (the dev tools are needed to run the server).
+            </p>
+            <CodeBlock code={SELF_HOST} id="host" />
+            <a
+              href={REPO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block text-cyan-400 hover:text-cyan-300 hover:underline"
+            >
+              Source code on GitHub
+            </a>
+          </section>
         </div>
       </div>
     </div>

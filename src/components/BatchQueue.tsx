@@ -60,7 +60,7 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
           <Layers className="h-4 w-4 text-cyan-400" />
           <span className="text-sm font-semibold text-white">Batch Queue</span>
           <span className="text-xs font-mono text-slate-400">
-            ({completedCount}/{items.length} Ready)
+            {completedCount}/{items.length} ready
           </span>
         </div>
 
@@ -72,7 +72,7 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 rounded-lg transition-all cursor-pointer"
             >
               <Play className="h-3 w-3 fill-current" />
-              <span>Upscale All ({idleCount})</span>
+              <span>Upscale all ({idleCount})</span>
             </button>
           )}
 
@@ -83,7 +83,7 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-50 rounded-lg transition-colors cursor-pointer"
             >
               <FileArchive className="h-3.5 w-3.5 text-cyan-400" />
-              <span>{isGeneratingZip ? 'Zipping...' : `Download All (${completedCount} ZIP)`}</span>
+              <span>{isGeneratingZip ? 'Zipping…' : `Download ZIP (${completedCount})`}</span>
             </button>
           )}
 
@@ -91,7 +91,8 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
             onClick={onClearAll}
             disabled={isProcessingAny}
             className="p-1.5 text-slate-400 hover:text-rose-400 bg-slate-950/60 hover:bg-rose-950/30 border border-slate-800 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
-            title="Clear Queue"
+            title="Clear queue"
+            aria-label="Clear queue"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
@@ -113,8 +114,17 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
             >
               {/* Thumbnail & Meta */}
               <div
+                role="button"
+                tabIndex={0}
+                aria-pressed={isSelected}
                 onClick={() => onSelectItem(item.id)}
-                className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectItem(item.id);
+                  }
+                }}
+                className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer rounded-lg focus-visible:outline-2 focus-visible:outline-cyan-400"
               >
                 <div className="relative h-10 w-10 shrink-0 rounded-lg overflow-hidden bg-slate-900 border border-slate-800">
                   <img
@@ -201,6 +211,7 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
                           : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
                       }`}
                       title="Inspect in comparison slider"
+                      aria-label={`Inspect ${item.name}`}
                     >
                       <Eye className="h-3.5 w-3.5" />
                     </button>
@@ -208,6 +219,7 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
                       onClick={() => onDownloadItem(item)}
                       className="p-1.5 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer"
                       title="Download image"
+                      aria-label={`Download ${item.name}`}
                     >
                       <Download className="h-3.5 w-3.5" />
                     </button>
@@ -219,6 +231,7 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
                   disabled={item.status === 'processing'}
                   className="p-1 text-slate-500 hover:text-rose-400 rounded transition-colors cursor-pointer disabled:opacity-40"
                   title="Remove from queue"
+                  aria-label={`Remove ${item.name}`}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>

@@ -10,17 +10,6 @@ import { processImageUpscale, UpscaleOptions } from './server/upscaler.ts';
 const app = express();
 const PORT = 3000;
 
-// CORS & Preflight handling for iframe environments
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  next();
-});
-
 // Middleware for JSON and urlencoded requests (up to 50MB)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -51,11 +40,11 @@ app.get('/api/system-status', (_req, res) => {
   const mem = process.memoryUsage();
   res.json({
     status: 'online',
-    engine: 'OpenUpscale Cloud Super-Resolution Engine',
+    engine: 'OpenUpscale ESRGAN Super-Resolution',
     libraries: [
-      { name: 'Sharp (libvips)', version: '0.35.5', role: 'Multi-kernel Lanczos-3 & Bilateral Resampling' },
-      { name: 'Adaptive Unsharp Kernel', version: '2.1', role: 'High-frequency edge enhancement & de-ringing' },
-      { name: 'JSZip', version: '3.10.2', role: 'In-memory batch archive streaming' },
+      { name: 'ESRGAN (UpscalerJS slim models)', version: '1.0.0', role: 'Neural super-resolution (2x, 4x, 8x)' },
+      { name: 'TensorFlow.js (WebAssembly)', version: '4.22.0', role: 'Model inference on the server' },
+      { name: 'Sharp (libvips)', version: '0.35.5', role: 'Decoding, Lanczos-3 fallback resize, encoding' },
     ],
     supportedFormats: ['JPG', 'JPEG', 'PNG', 'WEBP', 'AVIF', 'BMP', 'TIFF', 'GIF', 'SVG'],
     exportFormats: ['JPG', 'PNG', 'WEBP'],
@@ -135,10 +124,13 @@ app.post('/api/upscale', upload.single('file'), async (req, res) => {
       processingTimeMs: result.processingTimeMs,
       scale: options.scale,
       preset: options.preset || 'photo',
+      engine: result.engine,
+      engineNote: result.engineNote,
     });
   } catch (error: any) {
-    console.error('Upscale error:', error);
-    res.status(500).json({ error: error.message || 'Failed to process image' });
+    const status = error.status === 400 ? 400 : 500;
+    if (status === 500) console.error('Upscale error:', error);
+    res.status(status).json({ error: error.message || 'Failed to process image' });
   }
 });
 
@@ -248,8 +240,10 @@ app.all('/api/*', (req, res) => {
 // Global error handler for API errors
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (req.path.startsWith('/api')) {
-    console.error('API Error:', err);
-    return res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+    const isUploadError = err instanceof multer.MulterError || /^Unsupported file type/.test(err?.message || '');
+    const status = err.status || (isUploadError ? 400 : 500);
+    if (status >= 500) console.error('API Error:', err);
+    return res.status(status).json({ error: err.message || 'Internal server error' });
   }
   next(err);
 });
