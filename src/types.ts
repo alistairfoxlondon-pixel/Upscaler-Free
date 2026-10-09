@@ -5,23 +5,21 @@ export type ScaleFactor = 2 | 4 | 8;
 export interface UpscaleSettings {
   scale: ScaleFactor;
   preset: UpscalePreset;
-  sharpness: number; // 0 to 100
-  denoise: number; // 0 to 100
-  detailBoost: number; // 0 to 100
-  contrast: number; // -50 to +50
-  brightness: number; // -50 to +50
-  saturation: number; // -50 to +50
+  sharpness: number;
+  denoise: number;
+  detailBoost: number;
+  contrast: number;
+  brightness: number;
+  saturation: number;
   format: ExportFormat;
-  quality: number; // 80 to 100
-  autoDeleteOnDownload: boolean;
+  quality: number;
 }
 
 export interface UpscaleResultData {
   id: string;
-  dataUrl?: string;
-  downloadUrl: string;
+  dataUrl: string;
   originalName: string;
-  format: string;
+  format: ExportFormat;
   mimeType: string;
   originalWidth: number;
   originalHeight: number;
@@ -30,8 +28,8 @@ export interface UpscaleResultData {
   originalSize: number;
   upscaledSize: number;
   processingTimeMs: number;
-  scale: number;
-  preset: string;
+  scale: ScaleFactor;
+  preset: UpscalePreset;
 }
 
 export interface ImageQueueItem {
@@ -47,7 +45,6 @@ export interface ImageQueueItem {
   errorMessage?: string;
   result?: UpscaleResultData;
   isSample?: boolean;
-  samplePath?: string;
   settingsSnapshot: UpscaleSettings;
 }
 
@@ -61,7 +58,5 @@ export interface SystemInfo {
     ephemeralMode: boolean;
     persistentStorage: boolean;
     autoDeleteTtlMinutes: number;
-    activeFilesInMemory: number;
-    memoryUsageMb: number;
   };
 }

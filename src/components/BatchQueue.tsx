@@ -173,14 +173,14 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
 
               {/* Action buttons */}
               <div className="flex items-center gap-1.5 shrink-0">
-                {item.status === 'idle' && (
+                {(item.status === 'idle' || item.status === 'error') && (
                   <button
                     onClick={() => onProcessItem(item.id)}
                     disabled={isProcessingAny}
-                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg cursor-pointer"
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 rounded-lg cursor-pointer"
                   >
-                    <Play className="h-3 w-3 fill-current" />
-                    <span>Upscale</span>
+                    {item.status === 'error' ? <RefreshCw className="h-3 w-3" /> : <Play className="h-3 w-3 fill-current" />}
+                    <span>{item.status === 'error' ? 'Retry' : 'Upscale'}</span>
                   </button>
                 )}
 

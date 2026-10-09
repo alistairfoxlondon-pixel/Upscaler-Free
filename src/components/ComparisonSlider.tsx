@@ -9,8 +9,6 @@ import {
   SplitSquareVertical,
   Columns,
   Eye,
-  Check,
-  Share2,
 } from 'lucide-react';
 import { ImageQueueItem } from '../types.ts';
 
@@ -18,9 +16,6 @@ interface ComparisonSliderProps {
   item: ImageQueueItem;
   onDownload: (item: ImageQueueItem) => void;
   onDelete: (id: string) => void;
-  autoDeleteOnDownload: boolean;
-  onReUpscale?: () => void;
-  isProcessing?: boolean;
 }
 
 export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
@@ -34,12 +29,11 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
   const [isZoomed, setIsZoomed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isHoldingOriginal, setIsHoldingOriginal] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
   const originalSrc = item.previewUrl;
-  const enhancedSrc = item.result?.dataUrl || item.result?.downloadUrl || item.previewUrl;
+  const enhancedSrc = item.result?.dataUrl || item.previewUrl;
 
   const updateSliderPosition = useCallback((clientX: number) => {
     if (!containerRef.current) return;
@@ -95,14 +89,6 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-  };
-
-  const handleShare = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
-    }
   };
 
   const effectiveMode = isHoldingOriginal ? 'original' : viewMode;
@@ -357,14 +343,6 @@ export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
           <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
             {item.result && (
               <>
-                <button
-                  onClick={handleShare}
-                  className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-lg transition-colors cursor-pointer"
-                  title="Share"
-                >
-                  {copiedLink ? <Check className="h-4 w-4 text-emerald-400" /> : <Share2 className="h-4 w-4" />}
-                </button>
-
                 <button
                   onClick={() => onDownload(item)}
                   className="flex items-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg shadow-md shadow-cyan-400/20 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"

@@ -32,7 +32,6 @@ export default function App() {
     saturation: 0,
     format: 'png',
     quality: 95,
-    autoDeleteOnDownload: true,
   });
 
   const [queue, setQueue] = useState<ImageQueueItem[]>([]);
@@ -57,32 +56,6 @@ export default function App() {
     });
   };
 
-  // Load initial benchmark sample into queue as IDLE on mount
-  useEffect(() => {
-    if (queue.length === 0) {
-      const sample = SAMPLE_IMAGES[0];
-      const itemId = crypto.randomUUID();
-      const newItem: ImageQueueItem = {
-        id: itemId,
-        name: `${sample.name}.jpg`,
-        previewUrl: sample.url,
-        originalSize: 11425,
-        originalWidth: 400,
-        originalHeight: 300,
-        status: 'idle',
-        progress: 0,
-        isSample: true,
-        samplePath: sample.serverPath,
-        settingsSnapshot: {
-          ...settings,
-          preset: sample.recommendedPreset,
-        },
-      };
-      setQueue([newItem]);
-      setSelectedId(itemId);
-    }
-  }, []);
-
   // Global paste handler (Ctrl+V anywhere on page)
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
@@ -101,23 +74,29 @@ export default function App() {
     };
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [settings]);
+  }, [settings, queue.length]);
 
-  // Handle uploaded files
+  // Validate in one place so picker, drag/drop, and clipboard follow identical limits.
   const handleFilesSelected = async (files: File[]) => {
-    const newItems: ImageQueueItem[] = [];
+    const slots = Math.max(0, 20 - queue.length);
+    const candidates = files.slice(0, slots);
+    const valid = candidates.filter((file) =>
+      file.type.startsWith('image/') && file.type !== 'image/svg+xml' && file.size <= 4 * 1024 * 1024
+    );
+    if (slots === 0) return showToast('The batch queue is limited to 20 images');
+    if (valid.length !== files.length) showToast('Some files were skipped (image only, 4 MB maximum)');
 
-    for (const file of files) {
+    const newItems: ImageQueueItem[] = [];
+    for (const file of valid) {
       const previewUrl = URL.createObjectURL(file);
       const dims = await getImageDimensions(previewUrl);
-
       newItems.push({
         id: crypto.randomUUID(),
         name: file.name,
         file,
         previewUrl,
-        originalWidth: dims.width || 800,
-        originalHeight: dims.height || 600,
+        originalWidth: dims.width || undefined,
+        originalHeight: dims.height || undefined,
         originalSize: file.size,
         status: 'idle',
         progress: 0,
@@ -145,7 +124,6 @@ export default function App() {
       status: 'idle',
       progress: 0,
       isSample: true,
-      samplePath: sample.serverPath,
       settingsSnapshot: {
         ...settings,
         preset: sample.recommendedPreset,
@@ -156,104 +134,82 @@ export default function App() {
     setSelectedId(itemId);
   };
 
-  // Process a queue item
+  // Process a queue item entirely on the server. The browser only uploads and renders the result.
   const processItem = async (item: ImageQueueItem, customSettings?: UpscaleSettings) => {
     const activeOpts = customSettings || item.settingsSnapshot;
-
-    setQueue((prev) =>
-      prev.map((i) => (i.id === item.id ? { ...i, status: 'processing', progress: 30 } : i))
-    );
+    setQueue((prev) => prev.map((i) =>
+      i.id === item.id ? { ...i, status: 'processing', progress: 15, errorMessage: undefined } : i
+    ));
     setIsProcessingAny(true);
 
     try {
-      // 1. Get base64 or file
-      let base64Image = '';
-      if (item.file) {
-        base64Image = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(item.file!);
-        });
-      } else if (item.previewUrl) {
-        const resp = await fetch(item.previewUrl);
-        const blob = await resp.blob();
-        base64Image = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
+      let uploadFile = item.file;
+      if (!uploadFile) {
+        const response = await fetch(item.previewUrl);
+        if (!response.ok) throw new Error('Could not load the sample image');
+        const blob = await response.blob();
+        uploadFile = new File([blob], item.name, { type: blob.type || 'image/jpeg' });
       }
 
-      setQueue((prev) =>
-        prev.map((i) => (i.id === item.id ? { ...i, progress: 60 } : i))
-      );
+      const form = new FormData();
+      form.append('file', uploadFile, item.name);
+      Object.entries(activeOpts).forEach(([key, value]) => form.append(key, String(value)));
+      setQueue((prev) => prev.map((i) => i.id === item.id ? { ...i, progress: 45 } : i));
 
-      // 2. Call /api/upscale with JSON (Universal Vercel + Node support)
-      const res = await fetch('/api/upscale', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: base64Image,
-          name: item.name,
-          scale: activeOpts.scale,
-          preset: activeOpts.preset,
-          sharpness: activeOpts.sharpness,
-          denoise: activeOpts.denoise,
-          format: activeOpts.format,
-          quality: activeOpts.quality,
-        }),
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      let resultData: any;
-
-      if (contentType.includes('application/json')) {
-        resultData = await res.json();
-      } else {
-        const text = await res.text();
-        throw new Error(
-          res.ok
-            ? 'Unexpected non-JSON response from server'
-            : `Server returned error (${res.status}): ${text.slice(0, 100)}`
-        );
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 55_000);
+      let response: Response;
+      try {
+        response = await fetch('/api/upscale', { method: 'POST', body: form, signal: controller.signal });
+      } finally {
+        window.clearTimeout(timeout);
       }
 
-      if (!res.ok) {
-        throw new Error(resultData?.error || `Upload failed with status ${res.status}`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || `Cloud processing failed (${response.status})`);
+      }
+      if (!response.headers.get('content-type')?.startsWith('image/')) {
+        throw new Error('The cloud returned an invalid image response');
       }
 
-      // Update queue item
-      setQueue((prev) =>
-        prev.map((i) =>
-          i.id === item.id
-            ? {
-                ...i,
-                status: 'success',
-                progress: 100,
-                result: resultData as UpscaleResultData,
-                settingsSnapshot: activeOpts,
-              }
-            : i
-        )
-      );
-      showToast(`Upscaled to ${resultData.scale}x in ${resultData.processingTimeMs}ms`);
+      const encodedMetadata = response.headers.get('x-upscale-metadata');
+      if (!encodedMetadata) throw new Error('The cloud response is missing image metadata');
+      const base64 = encodedMetadata.replace(/-/g, '+').replace(/_/g, '/');
+      const metadata = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')));
+      const blob = await response.blob();
+      if (!blob.size) throw new Error('The cloud returned an empty image');
+      const resultUrl = URL.createObjectURL(blob);
+
+      setQueue((prev) => prev.map((i) => {
+        if (i.id !== item.id) return i;
+        if (i.result?.dataUrl.startsWith('blob:')) URL.revokeObjectURL(i.result.dataUrl);
+        return {
+          ...i,
+          status: 'success',
+          progress: 100,
+          originalWidth: metadata.originalWidth,
+          originalHeight: metadata.originalHeight,
+          settingsSnapshot: activeOpts,
+          result: {
+            id: crypto.randomUUID(),
+            dataUrl: resultUrl,
+            originalName: item.name,
+            scale: activeOpts.scale,
+            preset: activeOpts.preset,
+            ...metadata,
+          } as UpscaleResultData,
+        };
+      }));
+      showToast(`Enhanced to ${activeOpts.scale}x in ${metadata.processingTimeMs} ms`);
     } catch (error: any) {
-      console.error('Processing error:', error);
-      const msg = error.message || 'Processing failed';
-      setQueue((prev) =>
-        prev.map((i) =>
-          i.id === item.id
-            ? {
-                ...i,
-                status: 'error',
-                errorMessage: msg,
-              }
-            : i
-        )
-      );
-      showToast(`Error: ${msg}`);
+      const message = error?.name === 'AbortError'
+        ? 'Cloud processing timed out. Try a smaller scale or image.'
+        : error?.message || 'Processing failed';
+      setQueue((prev) => prev.map((i) =>
+        i.id === item.id ? { ...i, status: 'error', progress: 0, errorMessage: message } : i
+      ));
+      showToast(message);
     } finally {
       setIsProcessingAny(false);
     }
@@ -273,7 +229,7 @@ export default function App() {
   const handleDownloadItem = (item: ImageQueueItem) => {
     if (!item.result) return;
 
-    const downloadSrc = item.result.dataUrl || item.result.downloadUrl;
+    const downloadSrc = item.result.dataUrl;
     const filename = `${item.name.replace(/\.[^/.]+$/, '')}_upscaled_${item.result.scale}x.${item.result.format}`;
 
     const link = document.createElement('a');
@@ -297,9 +253,9 @@ export default function App() {
 
       for (const item of completedItems) {
         if (item.result?.dataUrl) {
-          const base64Data = item.result.dataUrl.split(',')[1];
+          const output = await fetch(item.result.dataUrl).then((response) => response.blob());
           const filename = `${item.name.replace(/\.[^/.]+$/, '')}_upscaled_${item.result.scale}x.${item.result.format}`;
-          zip.file(filename, base64Data, { base64: true });
+          zip.file(filename, output);
         }
       }
 
@@ -321,17 +277,23 @@ export default function App() {
     }
   };
 
-  // Remove single item
+  const releaseItemUrls = (item: ImageQueueItem) => {
+    if (item.file && item.previewUrl.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl);
+    if (item.result?.dataUrl.startsWith('blob:')) URL.revokeObjectURL(item.result.dataUrl);
+  };
+
+  // Remove single item and release browser memory. The cloud copy was already discarded.
   const handleRemoveItem = (id: string) => {
-    setQueue((prev) => prev.filter((i) => i.id !== id));
-    if (selectedId === id) {
-      const remaining = queue.filter((i) => i.id !== id);
-      setSelectedId(remaining.length > 0 ? remaining[0].id : null);
-    }
+    const removed = queue.find((item) => item.id === id);
+    if (removed) releaseItemUrls(removed);
+    const remaining = queue.filter((item) => item.id !== id);
+    setQueue(remaining);
+    if (selectedId === id) setSelectedId(remaining[0]?.id ?? null);
   };
 
   // Clear all
   const handleClearAll = () => {
+    queue.forEach(releaseItemUrls);
     setQueue([]);
     setSelectedId(null);
     showToast('Queue cleared');
@@ -355,9 +317,6 @@ export default function App() {
                   item={selectedItem}
                   onDownload={handleDownloadItem}
                   onDelete={handleRemoveItem}
-                  autoDeleteOnDownload={settings.autoDeleteOnDownload}
-                  onReUpscale={() => processItem(selectedItem, settings)}
-                  isProcessing={selectedItem.status === 'processing'}
                 />
               </div>
 
@@ -400,16 +359,16 @@ export default function App() {
                     <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
                     <span>Processing in Cloud...</span>
                   </div>
-                ) : selectedItem.status === 'success' ? (
+                ) : (
                   <button
                     onClick={() => processItem(selectedItem, settings)}
                     disabled={isProcessingAny}
-                    className="w-full py-2.5 px-4 rounded-xl font-medium text-xs text-slate-300 bg-slate-800 hover:bg-slate-750 hover:text-white border border-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                    className="w-full py-2.5 px-4 rounded-xl font-medium text-xs text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
                   >
                     <RefreshCw className="h-3.5 w-3.5 text-cyan-400" />
-                    <span>Re-Upscale with Current Settings</span>
+                    <span>{selectedItem.status === 'error' ? 'Retry Processing' : 'Re-Upscale with Current Settings'}</span>
                   </button>
-                ) : null}
+                )}
               </div>
             </div>
 
@@ -491,7 +450,7 @@ export default function App() {
               Docs & Models
             </button>
             <a
-              href="https://github.com"
+              href="https://github.com/alistairfoxlondon-pixel/Upscaler-Free"
               target="_blank"
               rel="noreferrer"
               className="hover:text-white transition-colors"
