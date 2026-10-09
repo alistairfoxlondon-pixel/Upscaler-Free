@@ -79,7 +79,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       saturation: 0,
       format: 'png',
       quality: 95,
-      autoDeleteOnDownload: true,
     });
   };
 
@@ -206,7 +205,39 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
       </div>
 
-      {/* 4. Format & Quality */}
+      {/* 4. Fine controls */}
+      <details className="group border-t border-slate-800/80 pt-3">
+        <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-medium text-slate-300">
+          <span>Fine tune color & detail</span>
+          <span className="text-cyan-400 group-open:rotate-45 transition-transform">+</span>
+        </summary>
+        <div className="space-y-3 pt-3">
+          {([
+            ['detailBoost', 'Detail boost', 0, 100],
+            ['contrast', 'Contrast', -50, 50],
+            ['brightness', 'Brightness', -50, 50],
+            ['saturation', 'Saturation', -50, 50],
+          ] as const).map(([key, label, min, max]) => (
+            <label key={key} className="block space-y-1">
+              <span className="flex justify-between text-xs text-slate-400">
+                <span>{label}</span>
+                <span className="font-mono text-slate-300">{settings[key]}{key === 'detailBoost' ? '%' : ''}</span>
+              </span>
+              <input
+                type="range"
+                min={min}
+                max={max}
+                value={settings[key]}
+                disabled={disabled}
+                onChange={(event) => onChange({ ...settings, [key]: Number(event.target.value), preset: 'custom' })}
+                className="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
+              />
+            </label>
+          ))}
+        </div>
+      </details>
+
+      {/* 5. Format & Quality */}
       <div className="space-y-2 pt-2 border-t border-slate-800/80">
         <span className="text-xs font-medium text-slate-300">Format</span>
         <div className="grid grid-cols-3 gap-2">

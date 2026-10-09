@@ -22,16 +22,16 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
     setErrorMessage(null);
 
     const validFiles: File[] = [];
-    const MAX_SIZE = 35 * 1024 * 1024; // 35 MB
+    const MAX_SIZE = 4 * 1024 * 1024;
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-      if (!file.type.startsWith('image/')) {
-        setErrorMessage(`"${file.name}" is not an image file.`);
+      if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+        setErrorMessage(`"${file.name}" is not a supported raster image.`);
         continue;
       }
       if (file.size > MAX_SIZE) {
-        setErrorMessage(`"${file.name}" exceeds the 35 MB limit.`);
+        setErrorMessage(`"${file.name}" exceeds the 4 MB cloud limit.`);
         continue;
       }
       validFiles.push(file);
@@ -81,7 +81,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp,image/avif,image/tiff,image/gif,image/heic,image/heif"
           disabled={disabled}
           onChange={(e) => validateAndAddFiles(e.target.files)}
           className="hidden"
@@ -95,7 +95,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
           Drop images here or <span className="text-cyan-400 hover:underline">browse</span>
         </h3>
         <p className="text-xs text-slate-400 mb-3">
-          Paste with Ctrl+V · Batch support up to 20 images · Up to 35 MB each
+          Paste with Ctrl+V · Batch up to 20 images · 4 MB each
         </p>
 
         {/* Concise format tags */}
@@ -110,7 +110,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
           <span>·</span>
           <span>TIFF</span>
           <span>·</span>
-          <span>BMP</span>
+          <span>HEIC</span>
         </div>
       </div>
 

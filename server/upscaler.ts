@@ -1,12 +1,22 @@
 import sharp from 'sharp';
 
+export const SUPPORTED_SCALES = [2, 4, 8] as const;
+export const SUPPORTED_FORMATS = ['jpg', 'png', 'webp'] as const;
+export const MAX_INPUT_BYTES = 4 * 1024 * 1024;
+export const MAX_OUTPUT_DIMENSION = 12_000;
+export const MAX_OUTPUT_PIXELS = 64_000_000;
+
 export interface UpscaleOptions {
-  scale: number; // 2, 4, 8
+  scale: number;
   preset?: 'photo' | 'digital_art' | 'anime' | 'document' | 'custom';
-  sharpness?: number; // 0 to 100
-  denoise?: number; // 0 to 100
+  sharpness?: number;
+  denoise?: number;
+  detailBoost?: number;
+  contrast?: number;
+  brightness?: number;
+  saturation?: number;
   format?: 'jpg' | 'png' | 'webp';
-  quality?: number; // 80 to 100
+  quality?: number;
 }
 
 export interface UpscaleResult {
@@ -23,71 +33,95 @@ export interface UpscaleResult {
   processingTimeMs: number;
 }
 
+const clamp = (value: unknown, min: number, max: number, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+};
+
+export function normalizeOptions(options: UpscaleOptions): Required<UpscaleOptions> {
+  const scale = Number(options.scale);
+  if (!SUPPORTED_SCALES.includes(scale as (typeof SUPPORTED_SCALES)[number])) {
+    throw new Error('Scale must be 2, 4, or 8');
+  }
+
+  const format = options.format ?? 'png';
+  if (!SUPPORTED_FORMATS.includes(format)) throw new Error('Format must be jpg, png, or webp');
+
+  const presets = ['photo', 'digital_art', 'anime', 'document', 'custom'] as const;
+  const preset = presets.includes(options.preset as (typeof presets)[number])
+    ? (options.preset as Required<UpscaleOptions>['preset'])
+    : 'photo';
+
+  const defaults = {
+    photo: { sharpness: 45, denoise: 20, detailBoost: 35 },
+    digital_art: { sharpness: 65, denoise: 25, detailBoost: 55 },
+    anime: { sharpness: 65, denoise: 30, detailBoost: 55 },
+    document: { sharpness: 75, denoise: 15, detailBoost: 65 },
+    custom: { sharpness: 45, denoise: 20, detailBoost: 40 },
+  }[preset];
+
+  return {
+    scale,
+    preset,
+    sharpness: clamp(options.sharpness, 0, 100, defaults.sharpness),
+    denoise: clamp(options.denoise, 0, 100, defaults.denoise),
+    detailBoost: clamp(options.detailBoost, 0, 100, defaults.detailBoost),
+    contrast: clamp(options.contrast, -50, 50, 0),
+    brightness: clamp(options.brightness, -50, 50, 0),
+    saturation: clamp(options.saturation, -50, 50, 0),
+    format,
+    quality: clamp(options.quality, 70, 100, 95),
+  };
+}
+
 /**
- * High-Fidelity Cloud Super-Resolution
- * Uses Lanczos-3 windowed sinc resampling with clean edge de-ringing.
- * Preserves 100% natural skin tones, smooth gradients, and zero halo artifacts.
+ * Deterministic cloud enhancement based on libvips via Sharp.
+ * This is high-quality resampling, not a generative neural model: it does not invent detail.
  */
 export async function processImageUpscale(
   inputBuffer: Buffer,
-  options: UpscaleOptions
+  rawOptions: UpscaleOptions
 ): Promise<UpscaleResult> {
   const startTime = Date.now();
-  const scale = Math.min(8, Math.max(1, Number(options.scale) || 2));
-  const targetFormat = options.format || 'png';
-  const quality = Math.min(100, Math.max(70, Number(options.quality) || 95));
+  if (!Buffer.isBuffer(inputBuffer) || inputBuffer.length === 0) throw new Error('Image is empty');
+  if (inputBuffer.length > MAX_INPUT_BYTES) throw new Error('Image exceeds the 4 MB cloud limit');
 
-  // 1. Inspect original metadata
-  const originalMeta = await sharp(inputBuffer).metadata();
-  if (!originalMeta.width || !originalMeta.height) {
-    throw new Error('Invalid or unreadable image file');
+  const options = normalizeOptions(rawOptions);
+  const source = sharp(inputBuffer, { failOn: 'error', limitInputPixels: 40_000_000 });
+  const meta = await source.metadata();
+  const supportedInputs = new Set(['jpeg', 'png', 'webp', 'avif', 'tiff', 'gif', 'heif']);
+  if (!meta.format || !supportedInputs.has(meta.format) || !meta.width || !meta.height) {
+    throw new Error('Unsupported or unreadable raster image (use JPEG, PNG, WebP, AVIF, TIFF, GIF, or HEIC)');
   }
 
-  // Handle EXIF orientation
-  const isSwapped =
-    originalMeta.orientation && originalMeta.orientation >= 5 && originalMeta.orientation <= 8;
-  const originalWidth = isSwapped ? originalMeta.height : originalMeta.width;
-  const originalHeight = isSwapped ? originalMeta.width : originalMeta.height;
+  const swapped = Boolean(meta.orientation && meta.orientation >= 5 && meta.orientation <= 8);
+  const originalWidth = swapped ? meta.height : meta.width;
+  const originalHeight = swapped ? meta.width : meta.height;
+  const targetWidth = Math.round(originalWidth * options.scale);
+  const targetHeight = Math.round(originalHeight * options.scale);
 
-  const targetWidth = Math.round(originalWidth * scale);
-  const targetHeight = Math.round(originalHeight * scale);
-
-  const MAX_DIMENSION = 12000;
-  if (targetWidth > MAX_DIMENSION || targetHeight > MAX_DIMENSION) {
+  if (
+    targetWidth > MAX_OUTPUT_DIMENSION ||
+    targetHeight > MAX_OUTPUT_DIMENSION ||
+    targetWidth * targetHeight > MAX_OUTPUT_PIXELS
+  ) {
     throw new Error(
-      `Resulting dimensions (${targetWidth}×${targetHeight}) exceed the maximum limit of ${MAX_DIMENSION}px.`
+      `Requested output ${targetWidth}×${targetHeight} exceeds the 12,000 px / 64 MP safety limit`
     );
   }
 
-  // 2. Preset parameters: Clean, natural, artifact-free
-  const preset = options.preset || 'photo';
-  let sharpnessLevel = options.sharpness ?? 50;
-  let denoiseLevel = options.denoise ?? 20;
-
-  if (preset === 'photo') {
-    sharpnessLevel = options.sharpness ?? 45;
-    denoiseLevel = options.denoise ?? 20;
-  } else if (preset === 'digital_art' || preset === 'anime') {
-    sharpnessLevel = options.sharpness ?? 65;
-    denoiseLevel = options.denoise ?? 30;
-  } else if (preset === 'document') {
-    sharpnessLevel = options.sharpness ?? 75;
-    denoiseLevel = options.denoise ?? 25;
-  }
-
-  // 3. Initialize Sharp with EXIF auto-rotation
   let pipeline = sharp(inputBuffer, {
-    failOn: 'none',
-    limitInputPixels: 268402689,
+    failOn: 'error',
+    limitInputPixels: 40_000_000,
+    sequentialRead: true,
   }).rotate();
 
-  // 4. Pre-Denoise: subtle de-blocking before resampling to eliminate JPEG artifacts
-  if (denoiseLevel > 20) {
-    const preBlurSigma = Math.max(0.3, Math.min(0.6, 0.3 + (denoiseLevel / 100) * 0.3));
-    pipeline = pipeline.blur(preBlurSigma);
+  // A very light pre-filter suppresses block noise before enlargement. Keep blur below one pixel.
+  if (options.denoise > 15) {
+    const sigma = 0.3 + (options.denoise / 100) * 0.55;
+    pipeline = pipeline.blur(Number(sigma.toFixed(2)));
   }
 
-  // 5. High-Order Lanczos-3 Sinc Resampling
   pipeline = pipeline.resize({
     width: targetWidth,
     height: targetHeight,
@@ -96,64 +130,57 @@ export async function processImageUpscale(
     fastShrinkOnLoad: false,
   });
 
-  // 6. Clean, Natural Edge Sharpening (Zero Halo, Zero Grain)
-  // Low sigma (0.5 to 0.75) sharpens true single-pixel edges
-  // High m1 (1.0 to 1.2) keeps flat areas (skin, sky, gradients) perfectly smooth
-  if (sharpnessLevel > 10) {
-    const sigma = Math.min(0.8, 0.45 + (sharpnessLevel / 100) * 0.35);
-    const flatThreshold = 1.0; // Protect smooth regions
-    const edgeThreshold = Math.max(1.5, 2.8 - (sharpnessLevel / 100) * 1.2);
-
+  if (options.sharpness > 0 || options.detailBoost > 0) {
+    const combined = options.sharpness * 0.7 + options.detailBoost * 0.3;
     pipeline = pipeline.sharpen({
-      sigma: Number(sigma.toFixed(2)),
-      m1: flatThreshold,
-      m2: Number(edgeThreshold.toFixed(2)),
+      sigma: Number((0.5 + combined / 250).toFixed(2)),
+      m1: Number((0.7 + options.detailBoost / 125).toFixed(2)),
+      m2: Number((1.5 + options.sharpness / 80).toFixed(2)),
+      x1: 2,
+      y2: 10,
+      y3: 20,
     });
   }
 
-  // 7. Output Encoding
-  let mimeType = 'image/png';
-  if (targetFormat === 'jpg') {
+  const brightness = 1 + options.brightness / 100;
+  const saturation = 1 + options.saturation / 100;
+  if (brightness !== 1 || saturation !== 1) pipeline = pipeline.modulate({ brightness, saturation });
+  if (options.contrast !== 0) {
+    const contrast = 1 + options.contrast / 100;
+    pipeline = pipeline.linear(contrast, 128 * (1 - contrast));
+  }
+
+  let mimeType: string;
+  if (options.format === 'jpg') {
     mimeType = 'image/jpeg';
-    // Flatten transparent background to clean white for JPEG
-    pipeline = pipeline.flatten({ background: '#ffffff' });
-    pipeline = pipeline.jpeg({
-      quality,
-      progressive: true,
-      mozjpeg: true,
-      chromaSubsampling: '4:4:4', // Preserve highest color resolution
-    });
-  } else if (targetFormat === 'webp') {
+    pipeline = pipeline
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: options.quality, progressive: true, mozjpeg: true, chromaSubsampling: '4:4:4' });
+  } else if (options.format === 'webp') {
     mimeType = 'image/webp';
     pipeline = pipeline.webp({
-      quality,
+      quality: options.quality,
       effort: 4,
-      lossless: quality >= 98,
+      lossless: options.quality >= 100,
       smartSubsample: true,
     });
   } else {
     mimeType = 'image/png';
-    pipeline = pipeline.png({
-      compressionLevel: 6,
-      progressive: true,
-    });
+    pipeline = pipeline.png({ compressionLevel: 7, progressive: true });
   }
 
   const outputBuffer = await pipeline.toBuffer();
-  const processingTimeMs = Date.now() - startTime;
-  const dataUrl = `data:${mimeType};base64,${outputBuffer.toString('base64')}`;
-
   return {
     buffer: outputBuffer,
-    dataUrl,
+    dataUrl: `data:${mimeType};base64,${outputBuffer.toString('base64')}`,
     mimeType,
-    format: targetFormat,
+    format: options.format,
     originalWidth,
     originalHeight,
     upscaledWidth: targetWidth,
     upscaledHeight: targetHeight,
     originalSize: inputBuffer.length,
     upscaledSize: outputBuffer.length,
-    processingTimeMs,
+    processingTimeMs: Date.now() - startTime,
   };
 }

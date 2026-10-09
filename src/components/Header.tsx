@@ -50,7 +50,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDocs, activeCount }) => {
         {/* Zone 3: 1 primary action */}
         <div className="flex items-center gap-3 shrink-0">
           <a
-            href="https://github.com"
+            href="https://github.com/alistairfoxlondon-pixel/Upscaler-Free"
             target="_blank"
             rel="noreferrer"
             className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-slate-200 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
