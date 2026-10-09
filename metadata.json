@@ -1,0 +1,6 @@
+{
+  "name": "OpenUpscale - Free Open Source Cloud Image Upscaler",
+  "description": "Free, high-quality, fully open-source cloud image upscaler with batch processing, customizable enhancement settings, multi-format export, and instant automatic cleanup.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
