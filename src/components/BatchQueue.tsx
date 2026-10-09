@@ -1,23 +1,14 @@
-import React from 'react';
-import {
-  Layers,
-  Play,
-  Download,
-  Trash2,
-  RefreshCw,
-  CheckCircle2,
-  AlertTriangle,
-  FileArchive,
-  Eye,
-} from 'lucide-react';
-import { ImageQueueItem } from '../types.ts';
+import { AlertTriangle, CheckCircle2, Download, FileArchive, Play, RefreshCw, Trash2 } from 'lucide-react';
+import type { ImageQueueItem } from '../types.ts';
+import { formatBytes } from '../lib/format.ts';
+import { MAX_BATCH_SIZE } from '@/server/presets.ts';
 
 interface BatchQueueProps {
   items: ImageQueueItem[];
   selectedId: string | null;
   onSelectItem: (id: string) => void;
-  onProcessAll: () => void;
   onProcessItem: (id: string) => void;
+  onProcessAll: () => void;
   onRemoveItem: (id: string) => void;
   onClearAll: () => void;
   onDownloadItem: (item: ImageQueueItem) => void;
@@ -30,8 +21,8 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
   items,
   selectedId,
   onSelectItem,
-  onProcessAll,
   onProcessItem,
+  onProcessAll,
   onRemoveItem,
   onClearAll,
   onDownloadItem,
@@ -41,192 +32,136 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({
 }) => {
   if (items.length === 0) return null;
 
-  const completedCount = items.filter((i) => i.status === 'success').length;
-  const idleCount = items.filter((i) => i.status === 'idle').length;
-
-  const formatBytes = (bytes: number) => {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-  };
+  const done = items.filter((i) => i.status === 'success').length;
+  const pending = items.filter((i) => i.status === 'idle').length;
+  const failed = items.filter((i) => i.status === 'error').length;
 
   return (
-    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 sm:p-5 shadow-xl space-y-3.5">
-      {/* Queue Header & Actions */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
-        <div className="flex items-center gap-2">
-          <Layers className="h-4 w-4 text-cyan-400" />
-          <span className="text-sm font-semibold text-white">Batch Queue</span>
-          <span className="text-xs font-mono text-slate-400">
-            ({completedCount}/{items.length} Ready)
+    <div className="rounded-2xl border border-line bg-surface p-3 shadow-sm">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-ink">
+          Queue
+          <span className="ml-1.5 font-mono text-[11px] font-normal text-ink-faint tabular-nums">
+            {done}/{items.length}{pending > 0 ? ` · ${pending} to go` : ''}{failed > 0 ? ` · ${failed} failed` : ''}
           </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {idleCount > 0 && (
+        </p>
+        <div className="flex items-center gap-1.5">
+          {(pending > 0 || failed > 0) && (
             <button
               onClick={onProcessAll}
               disabled={isProcessingAny}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 rounded-lg transition-all cursor-pointer"
+              className="flex cursor-pointer items-center gap-1 rounded-lg bg-brand px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-brand-strong disabled:opacity-40"
             >
-              <Play className="h-3 w-3 fill-current" />
-              <span>Upscale All ({idleCount})</span>
+              <Play className="h-3 w-3 fill-current" /> Upscale all ({pending + failed})
             </button>
           )}
-
-          {completedCount > 0 && (
+          {done > 0 && (
             <button
               onClick={onDownloadAllZip}
               disabled={isGeneratingZip}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-50 rounded-lg transition-colors cursor-pointer"
+              className="flex cursor-pointer items-center gap-1 rounded-lg border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft transition hover:border-line-strong hover:text-ink disabled:opacity-40"
             >
-              <FileArchive className="h-3.5 w-3.5 text-cyan-400" />
-              <span>{isGeneratingZip ? 'Zipping...' : `Download All (${completedCount} ZIP)`}</span>
+              <FileArchive className="h-3 w-3" /> {isGeneratingZip ? 'Zipping…' : `ZIP (${done})`}
             </button>
           )}
-
           <button
             onClick={onClearAll}
             disabled={isProcessingAny}
-            className="p-1.5 text-slate-400 hover:text-rose-400 bg-slate-950/60 hover:bg-rose-950/30 border border-slate-800 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
-            title="Clear Queue"
+            title="Clear queue"
+            aria-label="Clear queue"
+            className="cursor-pointer rounded-lg p-1 text-ink-faint transition hover:bg-red-50 hover:text-err disabled:opacity-40"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Items list */}
-      <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+      <ul className="flex max-h-44 flex-col gap-1 overflow-y-auto pr-0.5">
         {items.map((item) => {
-          const isSelected = selectedId === item.id;
+          const selected = item.id === selectedId;
           return (
-            <div
+            <li
               key={item.id}
-              className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all ${
-                isSelected
-                  ? 'bg-slate-800/80 border-cyan-500/50 shadow-md ring-1 ring-cyan-500/20'
-                  : 'bg-slate-950/40 border-slate-800/80 hover:bg-slate-900/60'
+              className={`flex items-center gap-1 rounded-xl border p-1.5 pr-2 transition ${
+                selected ? 'border-brand/50 bg-brand-soft/60' : 'border-line bg-white hover:border-line-strong'
               }`}
             >
-              {/* Thumbnail & Meta */}
-              <div
+              <button
+                type="button"
                 onClick={() => onSelectItem(item.id)}
-                className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                aria-current={selected || undefined}
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
               >
-                <div className="relative h-10 w-10 shrink-0 rounded-lg overflow-hidden bg-slate-900 border border-slate-800">
-                  <img
-                    src={item.previewUrl}
-                    alt={item.name}
-                    referrerPolicy="no-referrer"
-                    className="h-full w-full object-cover"
-                  />
-                  {item.status === 'success' && (
-                    <div className="absolute inset-0 bg-cyan-950/40 flex items-center justify-center">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-cyan-400" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-medium text-slate-200 truncate">
-                      {item.name}
-                    </span>
-                    {item.isSample && (
-                      <span className="text-[9px] font-mono text-cyan-400 bg-cyan-950/60 px-1 rounded border border-cyan-800/50">
-                        Sample
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono">
-                    <span>{formatBytes(item.originalSize)}</span>
-                    <span>·</span>
-                    <span>{item.settingsSnapshot.scale}x</span>
-                    {item.result && (
-                      <>
-                        <span className="text-cyan-400">→</span>
-                        <span className="text-cyan-300 font-semibold">
-                          {formatBytes(item.result.upscaledSize)}
-                        </span>
-                      </>
-                    )}
-                  </div>
-
+                <span className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-canvas">
+                  <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
                   {item.status === 'processing' && (
-                    <div className="mt-1 h-1 w-28 bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-cyan-400 animate-pulse w-2/3" />
-                    </div>
+                    <span className="absolute inset-0 flex items-center justify-center bg-ink/50">
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-white" />
+                    </span>
                   )}
-
+                  {item.status === 'success' && (
+                    <span className="absolute right-0 bottom-0 flex h-3.5 w-3.5 items-center justify-center rounded-tl bg-ok text-white">
+                      <CheckCircle2 className="h-2.5 w-2.5" />
+                    </span>
+                  )}
                   {item.status === 'error' && (
-                    <div className="text-[10px] text-rose-400 flex items-center gap-1 mt-0.5">
-                      <AlertTriangle className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{item.errorMessage}</span>
-                    </div>
+                    <span className="absolute right-0 bottom-0 flex h-3.5 w-3.5 items-center justify-center rounded-tl bg-err text-white">
+                      <AlertTriangle className="h-2.5 w-2.5" />
+                    </span>
                   )}
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                {(item.status === 'idle' || item.status === 'error') && (
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-medium text-ink">{item.name}</span>
+                  <span className="block truncate font-mono text-[10px] text-ink-faint tabular-nums">
+                    {item.status === 'error'
+                      ? item.errorMessage
+                      : item.result
+                        ? `${item.result.upscaledWidth}×${item.result.upscaledHeight} · ${formatBytes(item.result.upscaledSize)}`
+                        : `${item.originalWidth ?? '?'}×${item.originalHeight ?? '?'} · ${formatBytes(item.originalSize)} · ${item.settingsSnapshot.scale}×`}
+                  </span>
+                </span>
+              </button>
+              <span className="flex shrink-0 items-center gap-1">
+                {item.status === 'error' && (
                   <button
+                    type="button"
                     onClick={() => onProcessItem(item.id)}
-                    disabled={isProcessingAny}
-                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 rounded-lg cursor-pointer"
+                    className="cursor-pointer rounded-md border border-line bg-white p-1 text-ink-soft transition hover:text-brand"
+                    title="Retry"
+                    aria-label={`Retry ${item.name}`}
                   >
-                    {item.status === 'error' ? <RefreshCw className="h-3 w-3" /> : <Play className="h-3 w-3 fill-current" />}
-                    <span>{item.status === 'error' ? 'Retry' : 'Upscale'}</span>
+                    <RefreshCw className="h-3 w-3" />
                   </button>
                 )}
-
-                {item.status === 'processing' && (
-                  <div className="flex items-center gap-1 text-xs font-mono text-cyan-400 px-2 py-1">
-                    <RefreshCw className="h-3 w-3 animate-spin" />
-                    <span>Processing</span>
-                  </div>
-                )}
-
                 {item.status === 'success' && (
-                  <>
-                    <button
-                      onClick={() => onSelectItem(item.id)}
-                      className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                        isSelected
-                          ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
-                      }`}
-                      title="Inspect in comparison slider"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => onDownloadItem(item)}
-                      className="p-1.5 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer"
-                      title="Download image"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    onClick={() => onDownloadItem(item)}
+                    className="cursor-pointer rounded-md border border-line bg-white p-1 text-ink-soft transition hover:text-brand"
+                    title="Download"
+                    aria-label={`Download ${item.name}`}
+                  >
+                    <Download className="h-3 w-3" />
+                  </button>
                 )}
-
                 <button
+                  type="button"
                   onClick={() => onRemoveItem(item.id)}
                   disabled={item.status === 'processing'}
-                  className="p-1 text-slate-500 hover:text-rose-400 rounded transition-colors cursor-pointer disabled:opacity-40"
-                  title="Remove from queue"
+                  className="cursor-pointer rounded-md p-1 text-ink-faint transition hover:text-err disabled:opacity-40"
+                  title="Remove"
+                  aria-label={`Remove ${item.name}`}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-3 w-3" />
                 </button>
-              </div>
-            </div>
+              </span>
+            </li>
           );
         })}
-      </div>
+      </ul>
+      {items.length >= MAX_BATCH_SIZE && (
+        <p className="mt-1.5 text-center text-[10px] text-ink-faint">Queue is full at {MAX_BATCH_SIZE} images</p>
+      )}
     </div>
   );
 };

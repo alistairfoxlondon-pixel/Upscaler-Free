@@ -1,13 +1,6 @@
-import React from 'react';
-import {
-  Sliders,
-  Camera,
-  Palette,
-  FileText,
-  RotateCcw,
-  Sparkles,
-} from 'lucide-react';
-import { UpscaleSettings, UpscalePreset, ScaleFactor, ExportFormat } from '../types.ts';
+import { ChevronDown, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { PRESET_PARAMS, checkOutputLimits, type UpscalePreset } from '@/server/presets.ts';
+import { DEFAULT_SETTINGS, type ExportFormat, type ScaleFactor, type UpscaleSettings } from '../types.ts';
 
 interface SettingsPanelProps {
   settings: UpscaleSettings;
@@ -16,265 +9,238 @@ interface SettingsPanelProps {
   activeDimensions?: { width: number; height: number };
 }
 
+const MODES: Array<{ id: UpscalePreset; label: string; hint: string }> = [
+  { id: 'auto', label: 'Auto', hint: 'Detects per image' },
+  { id: 'photo', label: 'Photo', hint: 'Faces & scenes' },
+  { id: 'anime', label: 'Art', hint: 'Illustration & anime' },
+  { id: 'document', label: 'Text', hint: 'Docs & screenshots' },
+];
+
+const FORMATS: Array<{ id: ExportFormat; label: string; hint: string }> = [
+  { id: 'png', label: 'PNG', hint: 'Lossless, largest' },
+  { id: 'webp', label: 'WebP', hint: 'Sharp & small' },
+  { id: 'jpg', label: 'JPG', hint: 'Universal' },
+];
+
+/** The values the server will actually apply for the current mode. */
+function effectiveParams(settings: UpscaleSettings) {
+  if (settings.preset === 'custom') {
+    return { sharpness: settings.sharpness, denoise: settings.denoise, detailBoost: settings.detailBoost };
+  }
+  if (settings.preset === 'auto') return PRESET_PARAMS.photo; // displayed as an estimate
+  return PRESET_PARAMS[settings.preset];
+}
+
+const Slider = ({
+  label, value, min, max, onChange, disabled, suffix = '',
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+  suffix?: string;
+}) => {
+  const pct = Math.round(((value - min) / (max - min)) * 100);
+  return (
+    <label className="block">
+      <span className="mb-0.5 flex items-baseline justify-between text-xs">
+        <span className="text-ink-soft">{label}</span>
+        <span className="font-mono text-[11px] tabular-nums text-ink">{value > 0 && min < 0 ? `+${value}` : value}{suffix}</span>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ ['--range-progress' as string]: `${pct}%` }}
+      />
+    </label>
+  );
+};
+
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   settings,
   onChange,
   disabled = false,
   activeDimensions,
 }) => {
-  const presets: Array<{
-    id: UpscalePreset;
-    label: string;
-    icon: React.ReactNode;
-  }> = [
-    {
-      id: 'photo',
-      label: 'Photo',
-      icon: <Camera className="h-3.5 w-3.5" />,
-    },
-    {
-      id: 'anime',
-      label: 'Art / Anime',
-      icon: <Palette className="h-3.5 w-3.5" />,
-    },
-    {
-      id: 'document',
-      label: 'Text / Doc',
-      icon: <FileText className="h-3.5 w-3.5" />,
-    },
-  ];
-
-  const handlePresetSelect = (preset: UpscalePreset) => {
-    let sharpness = 45;
-    let denoise = 20;
-
-    if (preset === 'photo') {
-      sharpness = 45;
-      denoise = 20;
-    } else if (preset === 'anime') {
-      sharpness = 65;
-      denoise = 30;
-    } else if (preset === 'document') {
-      sharpness = 75;
-      denoise = 25;
-    }
-
-    onChange({
-      ...settings,
-      preset,
-      sharpness,
-      denoise,
-    });
-  };
-
-  const handleReset = () => {
-    onChange({
-      scale: 2,
-      preset: 'photo',
-      sharpness: 45,
-      denoise: 20,
-      detailBoost: 50,
-      contrast: 0,
-      brightness: 0,
-      saturation: 0,
-      format: 'png',
-      quality: 95,
-    });
-  };
-
+  const eff = effectiveParams(settings);
+  const isCustom = settings.preset === 'custom';
   const targetWidth = activeDimensions ? Math.round(activeDimensions.width * settings.scale) : null;
   const targetHeight = activeDimensions ? Math.round(activeDimensions.height * settings.scale) : null;
+  const overLimit = activeDimensions
+    ? !checkOutputLimits(activeDimensions.width, activeDimensions.height, settings.scale).ok
+    : false;
+
+  const setScale = (scale: ScaleFactor) => onChange({ ...settings, scale });
+
+  const selectMode = (preset: UpscalePreset) => {
+    onChange({ ...settings, preset, ...PRESET_PARAMS[preset === 'auto' ? 'photo' : preset === 'custom' ? 'custom' : preset] });
+  };
+
+  /** Moving a refine slider switches to Custom, seeded with the current effective values. */
+  const tune = (key: 'sharpness' | 'denoise' | 'detailBoost', value: number) => {
+    onChange({ ...settings, ...eff, [key]: value, preset: 'custom' });
+  };
+
+  const activeModeId: UpscalePreset | 'digital_art-ui' =
+    settings.preset === 'digital_art' ? 'anime' : settings.preset;
 
   return (
-    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 sm:p-5 shadow-xl space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-        <div className="flex items-center gap-2">
-          <div className="p-1 rounded-lg bg-cyan-500/10 text-cyan-400">
-            <Sliders className="h-3.5 w-3.5" />
-          </div>
-          <span className="text-xs sm:text-sm font-semibold text-white">Enhancement Settings</span>
-        </div>
-
+    <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-faint">
+          <SlidersHorizontal className="h-3.5 w-3.5" /> Settings
+        </span>
         <button
-          onClick={handleReset}
+          type="button"
           disabled={disabled}
-          className="text-xs text-slate-400 hover:text-cyan-400 flex items-center gap-1 transition-colors disabled:opacity-40 cursor-pointer"
-          title="Reset defaults"
+          onClick={() => onChange({ ...DEFAULT_SETTINGS })}
+          className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-ink-faint transition hover:text-brand disabled:opacity-40"
+          title="Reset all settings"
         >
-          <RotateCcw className="h-3 w-3" />
-          <span>Reset</span>
+          <RotateCcw className="h-3 w-3" /> Reset
         </button>
       </div>
 
-      {/* 1. Scale Factor */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-medium text-slate-300">Upscale Scale</span>
-          {targetWidth && targetHeight && (
-            <span className="font-mono text-cyan-400 tabular-nums text-[11px]">
-              → {targetWidth}×{targetHeight} px
+      {/* Scale */}
+      <div className="mb-3 grid grid-cols-3 gap-1.5">
+        {([2, 4, 8] as ScaleFactor[]).map((factor) => {
+          const tooBig = activeDimensions
+            ? !checkOutputLimits(activeDimensions.width, activeDimensions.height, factor).ok
+            : false;
+          const selected = settings.scale === factor;
+          return (
+            <button
+              key={factor}
+              type="button"
+              disabled={disabled || tooBig}
+              onClick={() => setScale(factor)}
+              title={tooBig ? `${factor}× would exceed the 12,000 px / 64 MP limit` : `Enlarge ${factor}×`}
+              className={`cursor-pointer rounded-lg border px-2 py-1.5 text-center transition disabled:cursor-not-allowed disabled:opacity-35 ${
+                selected
+                  ? 'border-brand bg-brand-soft text-brand'
+                  : 'border-line text-ink-soft hover:border-line-strong hover:text-ink'
+              }`}
+            >
+              <span className="block font-mono text-sm font-bold">{factor}×</span>
+              <span className="block text-[10px] opacity-70">{factor === 2 ? 'fast' : factor === 4 ? 'big' : 'max'}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {targetWidth && targetHeight && (
+        <p className={`mb-3 text-center font-mono text-[11px] tabular-nums ${overLimit ? 'text-err' : 'text-ink-faint'}`}>
+          {activeDimensions!.width}×{activeDimensions!.height} → {targetWidth}×{targetHeight} px
+        </p>
+      )}
+
+      {/* Mode */}
+      <div className="mb-3">
+        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-faint">Mode</p>
+        <div className="grid grid-cols-4 gap-1.5">
+          {MODES.map((mode) => {
+            const selected = activeModeId === mode.id && !isCustom;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                disabled={disabled}
+                onClick={() => selectMode(mode.id)}
+                title={mode.hint}
+                className={`cursor-pointer rounded-lg border px-1 py-1.5 text-[11px] font-semibold transition ${
+                  selected
+                    ? 'border-brand bg-brand-soft text-brand'
+                    : 'border-line text-ink-soft hover:border-line-strong hover:text-ink'
+                }`}
+              >
+                {mode.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Refine */}
+      <div className="space-y-2 rounded-xl bg-canvas p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Refine</span>
+          {isCustom ? (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange({ ...settings, preset: 'auto' })}
+              className="cursor-pointer text-[11px] font-medium text-brand hover:underline"
+            >
+              Back to Auto
+            </button>
+          ) : (
+            <span className="text-[11px] text-ink-faint">
+              {settings.preset === 'auto' ? 'auto-tuned' : 'mode default'} — drag to fine-tune
             </span>
           )}
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          {([2, 4, 8] as ScaleFactor[]).map((factor) => {
-            const isSelected = settings.scale === factor;
-            return (
-              <button
-                key={factor}
-                type="button"
-                disabled={disabled}
-                onClick={() => onChange({ ...settings, scale: factor })}
-                className={`py-2 px-3 rounded-xl text-center border transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-cyan-500/20 border-cyan-500/80 text-white shadow-sm'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
-                }`}
-              >
-                <div className="text-sm font-bold font-mono">{factor}x</div>
-                <div className="text-[10px] text-slate-400">
-                  {factor === 2 ? 'Fast' : factor === 4 ? 'Ultra HD' : '8x Max'}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        <Slider label="Sharpness" value={eff.sharpness} min={0} max={100} disabled={disabled} onChange={(v) => tune('sharpness', v)} suffix="%" />
+        <Slider label="Denoise" value={eff.denoise} min={0} max={100} disabled={disabled} onChange={(v) => tune('denoise', v)} suffix="%" />
+        <Slider label="Detail boost" value={eff.detailBoost} min={0} max={100} disabled={disabled} onChange={(v) => tune('detailBoost', v)} suffix="%" />
       </div>
 
-      {/* 2. Enhancement Mode */}
-      <div className="space-y-1.5">
-        <span className="text-xs font-medium text-slate-300">Mode</span>
-        <div className="grid grid-cols-3 gap-1.5">
-          {presets.map((p) => {
-            const isSelected = settings.preset === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                disabled={disabled}
-                onClick={() => handlePresetSelect(p.id)}
-                className={`py-2 px-2 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  isSelected
-                    ? 'bg-cyan-500/20 border-cyan-500/70 text-cyan-300'
-                    : 'bg-slate-950/40 border-slate-800/80 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {p.icon}
-                <span>{p.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3. Sliders: Sharpness and Denoise */}
-      <div className="space-y-3 pt-2 border-t border-slate-800/80">
-        {/* Sharpness */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Sharpness</span>
-            <span className="font-mono tabular-nums text-slate-300">{settings.sharpness}%</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={settings.sharpness}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...settings, sharpness: Number(e.target.value) })}
-            className="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
-          />
-        </div>
-
-        {/* Denoise */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Artifact Denoise</span>
-            <span className="font-mono tabular-nums text-slate-300">{settings.denoise}%</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={settings.denoise}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...settings, denoise: Number(e.target.value) })}
-            className="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
-          />
-        </div>
-      </div>
-
-      {/* 4. Fine controls */}
-      <details className="group border-t border-slate-800/80 pt-3">
-        <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-medium text-slate-300">
-          <span>Fine tune color & detail</span>
-          <span className="text-cyan-400 group-open:rotate-45 transition-transform">+</span>
+      {/* Color */}
+      <details className="group mt-3">
+        <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-ink-faint transition hover:text-ink">
+          <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" /> Color
+          {(settings.contrast !== 0 || settings.brightness !== 0 || settings.saturation !== 0) && (
+            <span className="ml-1 h-1.5 w-1.5 rounded-full bg-brand" aria-label="Color adjusted" />
+          )}
         </summary>
-        <div className="space-y-3 pt-3">
-          {([
-            ['detailBoost', 'Detail boost', 0, 100],
-            ['contrast', 'Contrast', -50, 50],
-            ['brightness', 'Brightness', -50, 50],
-            ['saturation', 'Saturation', -50, 50],
-          ] as const).map(([key, label, min, max]) => (
-            <label key={key} className="block space-y-1">
-              <span className="flex justify-between text-xs text-slate-400">
-                <span>{label}</span>
-                <span className="font-mono text-slate-300">{settings[key]}{key === 'detailBoost' ? '%' : ''}</span>
-              </span>
-              <input
-                type="range"
-                min={min}
-                max={max}
-                value={settings[key]}
-                disabled={disabled}
-                onChange={(event) => onChange({ ...settings, [key]: Number(event.target.value), preset: 'custom' })}
-                className="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
-              />
-            </label>
-          ))}
+        <div className="mt-2 space-y-2 rounded-xl bg-canvas p-3">
+          <Slider label="Contrast" value={settings.contrast} min={-50} max={50} disabled={disabled} onChange={(v) => onChange({ ...settings, contrast: v })} />
+          <Slider label="Brightness" value={settings.brightness} min={-50} max={50} disabled={disabled} onChange={(v) => onChange({ ...settings, brightness: v })} />
+          <Slider label="Saturation" value={settings.saturation} min={-50} max={50} disabled={disabled} onChange={(v) => onChange({ ...settings, saturation: v })} />
         </div>
       </details>
 
-      {/* 5. Format & Quality */}
-      <div className="space-y-2 pt-2 border-t border-slate-800/80">
-        <span className="text-xs font-medium text-slate-300">Format</span>
-        <div className="grid grid-cols-3 gap-2">
-          {(['png', 'jpg', 'webp'] as ExportFormat[]).map((fmt) => {
-            const isSelected = settings.format === fmt;
+      {/* Output */}
+      <div className="mt-3">
+        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-faint">Output</p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {FORMATS.map((fmt) => {
+            const selected = settings.format === fmt.id;
             return (
               <button
-                key={fmt}
+                key={fmt.id}
                 type="button"
                 disabled={disabled}
-                onClick={() => onChange({ ...settings, format: fmt })}
-                className={`py-1.5 px-3 rounded-lg text-center font-mono uppercase text-xs font-semibold border transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-cyan-500/20 border-cyan-500/80 text-white'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+                onClick={() => onChange({ ...settings, format: fmt.id })}
+                title={fmt.hint}
+                className={`cursor-pointer rounded-lg border px-1 py-1.5 font-mono text-[11px] font-semibold uppercase transition ${
+                  selected
+                    ? 'border-brand bg-brand-soft text-brand'
+                    : 'border-line text-ink-soft hover:border-line-strong hover:text-ink'
                 }`}
               >
-                {fmt}
+                {fmt.label}
               </button>
             );
           })}
         </div>
-
-        {settings.format !== 'png' && (
-          <div className="space-y-1 pt-1">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Quality</span>
-              <span className="font-mono tabular-nums text-slate-300">{settings.quality}%</span>
-            </div>
-            <input
-              type="range"
-              min="80"
-              max="100"
+        {settings.format === 'png' ? (
+          <p className="mt-1.5 text-[11px] text-ink-faint">PNG is lossless — files are large at 4× and 8×.</p>
+        ) : (
+          <div className="mt-2">
+            <Slider
+              label="Quality"
               value={settings.quality}
+              min={70}
+              max={100}
               disabled={disabled}
-              onChange={(e) => onChange({ ...settings, quality: Number(e.target.value) })}
-              className="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
+              onChange={(v) => onChange({ ...settings, quality: v })}
+              suffix="%"
             />
           </div>
         )}

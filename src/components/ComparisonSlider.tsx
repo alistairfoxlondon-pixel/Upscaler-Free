@@ -1,16 +1,19 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Columns2,
   Download,
-  Trash2,
-  ZoomIn,
-  ZoomOut,
+  Eye,
   Maximize2,
   Minimize2,
+  RefreshCw,
+  Scissors,
   SplitSquareVertical,
-  Columns,
-  Eye,
+  Trash2,
+  X,
+  ZoomIn,
 } from 'lucide-react';
-import { ImageQueueItem } from '../types.ts';
+import type { ImageQueueItem } from '../types.ts';
+import { formatBytes, formatMs } from '../lib/format.ts';
 
 interface ComparisonSliderProps {
   item: ImageQueueItem;
@@ -18,349 +21,295 @@ interface ComparisonSliderProps {
   onDelete: (id: string) => void;
 }
 
-export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({
-  item,
-  onDownload,
-  onDelete,
-}) => {
-  const [sliderPosition, setSliderPosition] = useState(50);
-  const [isDragging, setIsDragging] = useState(false);
-  const [viewMode, setViewMode] = useState<'split' | 'side-by-side' | 'enhanced'>('split');
-  const [isZoomed, setIsZoomed] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isHoldingOriginal, setIsHoldingOriginal] = useState(false);
+export const ComparisonSlider: React.FC<ComparisonSliderProps> = ({ item, onDownload, onDelete }) => {
+  const [split, setSplit] = useState(50);
+  const [dragging, setDragging] = useState(false);
+  const [view, setView] = useState<'split' | 'side'>('split');
+  const [zoomed, setZoomed] = useState(false);
+  const [peeking, setPeeking] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
 
+  const hasResult = Boolean(item.result);
   const originalSrc = item.previewUrl;
-  const enhancedSrc = item.result?.dataUrl || item.previewUrl;
+  const enhancedSrc = item.result?.dataUrl ?? item.previewUrl;
 
-  const updateSliderPosition = useCallback((clientX: number) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const pos = Math.max(0, Math.min(100, (x / rect.width) * 100));
-    setSliderPosition(pos);
+  // Pixel size of the comparison box: enhanced native size (or original while idle).
+  const boxW = item.result?.upscaledWidth ?? item.originalWidth ?? 0;
+  const boxH = item.result?.upscaledHeight ?? item.originalHeight ?? 0;
+
+  const updateSplit = useCallback((clientX: number) => {
+    const rect = boxRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return;
+    setSplit(Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width) * 100)));
   }, []);
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    setIsDragging(true);
-    updateSliderPosition(e.clientX);
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (isDragging) {
-      updateSliderPosition(e.clientX);
-    }
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    setIsDragging(false);
-    try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {}
-  };
-
-  // Keyboard shortcut: Spacebar hold to temporarily reveal Original
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !e.repeat && document.activeElement?.tagName !== 'INPUT') {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setFullscreen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
+  // Hold Space to compare with the original (ignored while typing or on controls).
+  useEffect(() => {
+    const editable = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return el.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'SELECT';
+    };
+    const down = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !e.repeat && hasResult && !editable(e.target)) {
         e.preventDefault();
-        setIsHoldingOriginal(true);
+        setPeeking(true);
       }
     };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        setIsHoldingOriginal(false);
-      }
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setPeeking(false);
     };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
     };
-  }, []);
+  }, [hasResult]);
 
-  const formatBytes = (bytes: number) => {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-  };
+  const showOriginal = peeking || !hasResult;
+  const zoomActive = zoomed && hasResult && boxW > 0;
 
-  const effectiveMode = isHoldingOriginal ? 'original' : viewMode;
+  const imgFit = 'pointer-events-none absolute inset-0 h-full w-full object-contain';
+  const imgZoom = 'pointer-events-none absolute inset-0 h-full w-full object-fill';
+
+  const layers = (
+    <div
+      ref={boxRef}
+      className={`relative ${zoomActive ? 'm-auto shrink-0' : 'h-full w-full'}`}
+      style={zoomActive ? { width: boxW, height: boxH } : undefined}
+      onPointerDown={(e) => {
+        if (view !== 'split' || showOriginal) return;
+        setDragging(true);
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        updateSplit(e.clientX);
+      }}
+      onPointerMove={(e) => dragging && view === 'split' && updateSplit(e.clientX)}
+      onPointerUp={(e) => {
+        setDragging(false);
+        try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      }}
+    >
+      <img
+        src={originalSrc}
+        alt="Original"
+        referrerPolicy="no-referrer"
+        draggable={false}
+        className={`${zoomActive ? imgZoom : imgFit} ${zoomActive ? '[image-rendering:pixelated]' : ''}`}
+      />
+      {!showOriginal && view === 'split' && (
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{ clipPath: `polygon(${split}% 0, 100% 0, 100% 100%, ${split}% 100%)` }}
+        >
+          <img
+            src={enhancedSrc}
+            alt="Enhanced"
+            referrerPolicy="no-referrer"
+            draggable={false}
+            className={zoomActive ? imgZoom : imgFit}
+          />
+        </div>
+      )}
+      {!showOriginal && view === 'split' && (
+        <div
+          className={`pointer-events-none absolute top-0 bottom-0 z-10 w-0.5 cursor-ew-resize bg-brand ${dragging ? '' : 'transition-[left] duration-75'}`}
+          style={{ left: `calc(${split}% - 1px)` }}
+        >
+          <span className="absolute top-1/2 left-1/2 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-brand text-white shadow-md">
+            <SplitSquareVertical className="h-3.5 w-3.5" />
+          </span>
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <div
-      className={`flex flex-col rounded-2xl bg-slate-900 border border-slate-800 shadow-xl overflow-hidden transition-all ${
-        isFullscreen ? 'fixed inset-0 z-50 rounded-none bg-[#070b12]' : ''
-      }`}
-    >
-      {/* Top Bar: Clean, minimal toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-800 bg-slate-950/80 px-3.5 py-2.5 sm:px-5">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs sm:text-sm font-semibold text-white truncate max-w-[150px] sm:max-w-xs">
-            {item.name}
-          </span>
-          <span className="text-xs text-slate-500 font-mono">·</span>
-          <span className="text-xs font-mono text-cyan-400 font-medium shrink-0">
-            {item.result ? `${item.result.scale}x Enhanced` : 'Original'}
-          </span>
+    <div className={`flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm ${fullscreen ? 'fixed inset-0 z-50 rounded-none' : ''}`}>
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="max-w-[180px] truncate text-xs font-semibold text-ink sm:max-w-[320px]">{item.name}</span>
+          {hasResult && (
+            <span className="shrink-0 rounded-full bg-brand-soft px-2 py-0.5 font-mono text-[10px] font-semibold text-brand">
+              {item.result!.scale}×{item.result!.contentKind ? ` · ${item.result!.contentKind}` : ''}
+            </span>
+          )}
         </div>
 
-        {/* View Controls */}
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800">
-            <button
-              onClick={() => setViewMode('split')}
-              className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
-                viewMode === 'split'
-                  ? 'bg-cyan-500/20 text-cyan-300'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <SplitSquareVertical className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Split</span>
-            </button>
-            <button
-              onClick={() => setViewMode('side-by-side')}
-              className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
-                viewMode === 'side-by-side'
-                  ? 'bg-cyan-500/20 text-cyan-300'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Columns className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Side by Side</span>
-            </button>
-          </div>
+        <div className="flex items-center gap-1">
+          {hasResult && (
+            <>
+              <div className="mr-0.5 flex rounded-lg border border-line p-0.5">
+                <button
+                  onClick={() => setView('split')}
+                  title="Split comparison — drag the divider"
+                  aria-label="Split comparison"
+                  className={`cursor-pointer rounded-md p-1.5 transition ${view === 'split' ? 'bg-brand-soft text-brand' : 'text-ink-faint hover:text-ink'}`}
+                >
+                  <SplitSquareVertical className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setView('side')}
+                  title="Side by side"
+                  aria-label="Side by side"
+                  className={`cursor-pointer rounded-md p-1.5 transition ${view === 'side' ? 'bg-brand-soft text-brand' : 'text-ink-faint hover:text-ink'}`}
+                >
+                  <Columns2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <button
+                onClick={() => setZoomed(!zoomed)}
+                title={zoomed ? 'Fit to window' : 'Zoom to 1:1 pixels, then scroll'}
+                aria-label="Toggle 1:1 pixel zoom"
+                className={`cursor-pointer rounded-lg border p-1.5 transition ${
+                  zoomed ? 'border-brand/40 bg-brand-soft text-brand' : 'border-line text-ink-faint hover:text-ink'
+                }`}
+              >
+                {zoomed ? <Minimize2 className="h-3.5 w-3.5" /> : <ZoomIn className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                onMouseDown={() => setPeeking(true)}
+                onMouseUp={() => setPeeking(false)}
+                onMouseLeave={() => setPeeking(false)}
+                onTouchStart={() => setPeeking(true)}
+                onTouchEnd={() => setPeeking(false)}
+                title="Hold to see the original (or hold Space)"
+                aria-label="Hold to see the original"
+                className={`hidden cursor-pointer touch-none rounded-lg border p-1.5 transition select-none sm:block ${
+                  peeking ? 'border-brand/40 bg-brand-soft text-brand' : 'border-line text-ink-faint hover:text-ink'
+                }`}
+              >
+                <Eye className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => setFullscreen(!fullscreen)}
+            title={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'}
+            aria-label="Toggle full screen"
+            className="cursor-pointer rounded-lg border border-line p-1.5 text-ink-faint transition hover:text-ink"
+          >
+            {fullscreen ? <X className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+      </div>
 
-          {item.result && (
+      {/* Canvas */}
+      <div
+        className={`transparency-grid relative flex w-full items-center justify-center p-2 ${
+          fullscreen ? 'min-h-0 flex-1' : 'h-[300px] sm:h-[420px]'
+        } ${zoomActive ? 'cursor-grab overflow-auto' : 'overflow-hidden'}`}
+      >
+        {view === 'side' && hasResult ? (
+          <div className="grid h-full w-full grid-cols-2 gap-2">
+            {[
+              { label: 'Original', src: originalSrc, dims: `${item.originalWidth ?? '?'}×${item.originalHeight ?? '?'}`, pixelate: zoomActive },
+              { label: `${item.result!.scale}× upscaled`, src: enhancedSrc, dims: `${item.result!.upscaledWidth}×${item.result!.upscaledHeight}`, pixelate: false },
+            ].map((pane) => (
+              <figure
+                key={pane.label}
+                className={`relative flex min-w-0 items-center justify-center rounded-lg ${zoomActive ? 'overflow-auto' : 'overflow-hidden'}`}
+              >
+                {zoomActive ? (
+                  <img
+                    src={pane.src}
+                    alt={pane.label}
+                    referrerPolicy="no-referrer"
+                    draggable={false}
+                    style={{ width: boxW, height: boxH }}
+                    className={`pointer-events-none m-auto shrink-0 object-fill ${pane.pixelate ? '[image-rendering:pixelated]' : ''}`}
+                  />
+                ) : (
+                  <img src={pane.src} alt={pane.label} referrerPolicy="no-referrer" draggable={false} className="pointer-events-none max-h-full max-w-full object-contain" />
+                )}
+                <figcaption className="absolute bottom-1.5 left-1/2 -translate-x-1/2 rounded-full bg-ink/70 px-2 py-0.5 font-mono text-[10px] whitespace-nowrap text-white tabular-nums">
+                  {pane.label} · {pane.dims}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        ) : (
+          <div className={`flex ${zoomActive ? 'min-h-full w-full' : 'h-full w-full'} items-center justify-center ${zoomActive ? 'min-w-full' : ''}`}>
+            {layers}
+          </div>
+        )}
+
+        {/* Overlays */}
+        {item.status === 'processing' && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-ink/45 backdrop-blur-[2px]">
+            <RefreshCw className="h-6 w-6 animate-spin text-white" />
+            <p className="text-xs font-medium text-white">Upscaling in the cloud…</p>
+            <div className="h-1 w-40 overflow-hidden rounded-full bg-white/25">
+              <div className="h-full bg-white transition-all duration-300" style={{ width: `${Math.max(8, item.progress)}%` }} />
+            </div>
+          </div>
+        )}
+        {item.status === 'error' && (
+          <div className="absolute inset-x-3 bottom-3 z-20 mx-auto flex max-w-md items-start gap-2 rounded-xl border border-red-200 bg-white p-3 shadow-lg">
+            <X className="mt-0.5 h-4 w-4 shrink-0 text-err" />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-ink">Couldn't upscale this image</p>
+              <p className="mt-0.5 text-[11px] break-words text-ink-soft">{item.errorMessage}</p>
+            </div>
+          </div>
+        )}
+        {!hasResult && item.status === 'idle' && (
+          <span className="absolute bottom-2.5 left-1/2 z-10 -translate-x-1/2 rounded-full bg-ink/70 px-2.5 py-0.5 text-[11px] font-medium text-white">
+            Press Upscale to start
+          </span>
+        )}
+      </div>
+
+      {/* Status & actions */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-3 py-2">
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px] text-ink-soft tabular-nums">
+          {hasResult ? (
+            <>
+              <span>{item.result!.originalWidth}×{item.result!.originalHeight} · {formatBytes(item.result!.originalSize)}</span>
+              <span className="text-brand">→</span>
+              <span className="font-semibold text-ink">{item.result!.upscaledWidth}×{item.result!.upscaledHeight} · {formatBytes(item.result!.upscaledSize)}</span>
+              <span className="text-ink-faint">{formatMs(item.result!.processingTimeMs)}</span>
+            </>
+          ) : (
+            <span>
+              {item.originalWidth ? `${item.originalWidth}×${item.originalHeight} · ` : ''}
+              {formatBytes(item.originalSize)}
+            </span>
+          )}
+        </p>
+        <div className="flex items-center gap-1.5">
+          {hasResult && (
             <button
-              onMouseDown={() => setIsHoldingOriginal(true)}
-              onMouseUp={() => setIsHoldingOriginal(false)}
-              onTouchStart={() => setIsHoldingOriginal(true)}
-              onTouchEnd={() => setIsHoldingOriginal(false)}
-              className={`hidden sm:flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors select-none cursor-pointer ${
-                isHoldingOriginal
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-              }`}
-              title="Hold to view original (Spacebar)"
+              onClick={() => onDownload(item)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-strong"
             >
-              <Eye className="h-3 w-3" />
-              <span>Hold for Original</span>
+              <Download className="h-3.5 w-3.5" /> Download
             </button>
           )}
-
-          {/* 100% Zoom toggle for pixel inspection */}
           <button
-            onClick={() => setIsZoomed(!isZoomed)}
-            className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
-              isZoomed
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
-            }`}
-            title="Inspect at 100% actual pixels"
+            onClick={() => onDelete(item.id)}
+            title="Remove image"
+            aria-label="Remove image"
+            className="cursor-pointer rounded-lg border border-line p-1.5 text-ink-faint transition hover:border-red-200 hover:bg-red-50 hover:text-err"
           >
-            {isZoomed ? <ZoomOut className="h-3.5 w-3.5" /> : <ZoomIn className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">{isZoomed ? 'Fit' : '100% Pixels'}</span>
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
-
-          <button
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-1.5 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-lg transition-colors cursor-pointer"
-            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-          >
-            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Main Comparison Canvas */}
-      <div
-        ref={containerRef}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        className={`relative w-full bg-[#070b12] select-none overflow-hidden touch-none ${
-          isFullscreen ? 'flex-1 min-h-0' : 'h-[320px] sm:h-[420px] md:h-[480px]'
-        }`}
-      >
-        {/* VIEW: SPLIT SLIDER */}
-        {effectiveMode === 'split' && (
-          <div className="absolute inset-0 flex items-center justify-center p-2">
-            <div
-              className={`relative max-h-full max-w-full flex items-center justify-center overflow-hidden ${
-                isZoomed ? 'scale-150 origin-center transition-transform duration-200' : ''
-              }`}
-            >
-              {/* Layer 1: Original Image */}
-              <img
-                src={originalSrc}
-                alt="Original"
-                referrerPolicy="no-referrer"
-                className="max-h-full max-w-full object-contain pointer-events-none block"
-              />
-
-              {/* Layer 2: Upscaled Enhanced Image (Clipped) */}
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  clipPath: `polygon(${sliderPosition}% 0, 100% 0, 100% 100%, ${sliderPosition}% 100%)`,
-                }}
-              >
-                <img
-                  src={enhancedSrc}
-                  alt="Enhanced"
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-contain pointer-events-none block"
-                />
-              </div>
-
-              {/* Slider Divider Line */}
-              <div
-                className="absolute top-0 bottom-0 pointer-events-none z-20"
-                style={{ left: `${sliderPosition}%` }}
-              >
-                <div className="absolute top-0 bottom-0 -left-[1px] w-[2px] bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.9)]" />
-
-                {/* Draggable Divider Handle */}
-                <div
-                  className="pointer-events-auto absolute top-1/2 -left-4 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/40 cursor-ew-resize hover:scale-110 active:scale-95 transition-transform"
-                  title="Drag left or right"
-                >
-                  <SplitSquareVertical className="h-4 w-4" />
-                </div>
-              </div>
-            </div>
-
-            {/* Badges */}
-            <div className="absolute bottom-3 left-3 z-10 rounded-md bg-slate-950/80 px-2 py-0.5 text-[11px] font-mono text-slate-300 border border-slate-800 pointer-events-none">
-              Original ({item.originalWidth ? `${item.originalWidth}×${item.originalHeight}` : 'Before'})
-            </div>
-            <div className="absolute bottom-3 right-3 z-10 rounded-md bg-cyan-950/90 px-2 py-0.5 text-[11px] font-mono text-cyan-300 border border-cyan-800/80 pointer-events-none font-semibold">
-              {item.result ? `${item.result.scale}x Enhanced (${item.result.upscaledWidth}×${item.result.upscaledHeight})` : 'After'}
-            </div>
-          </div>
-        )}
-
-        {/* VIEW: SIDE BY SIDE */}
-        {effectiveMode === 'side-by-side' && (
-          <div className="grid grid-cols-2 h-full w-full divide-x divide-slate-800">
-            <div className="relative flex items-center justify-center p-2 overflow-hidden">
-              <img
-                src={originalSrc}
-                alt="Original"
-                referrerPolicy="no-referrer"
-                className={`max-h-full max-w-full object-contain ${isZoomed ? 'scale-150' : ''}`}
-              />
-              <span className="absolute bottom-2 left-2 bg-slate-950/80 px-2 py-0.5 text-[10px] sm:text-xs font-mono text-slate-300 border border-slate-800 rounded">
-                Original ({item.originalWidth}×{item.originalHeight})
-              </span>
-            </div>
-            <div className="relative flex items-center justify-center p-2 overflow-hidden bg-slate-950/30">
-              <img
-                src={enhancedSrc}
-                alt="Enhanced"
-                referrerPolicy="no-referrer"
-                className={`max-h-full max-w-full object-contain ${isZoomed ? 'scale-150' : ''}`}
-              />
-              <span className="absolute bottom-2 right-2 bg-cyan-950/90 px-2 py-0.5 text-[10px] sm:text-xs font-mono text-cyan-300 border border-cyan-800 rounded font-semibold">
-                Enhanced ({item.result?.scale || 2}x · {item.result?.upscaledWidth}×{item.result?.upscaledHeight})
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW: ORIGINAL (HOLD) */}
-        {effectiveMode === 'original' && (
-          <div className="h-full w-full flex items-center justify-center p-2">
-            <img
-              src={originalSrc}
-              alt="Original"
-              referrerPolicy="no-referrer"
-              className={`max-h-full max-w-full object-contain ${isZoomed ? 'scale-150' : ''}`}
-            />
-            <span className="absolute bottom-3 left-3 bg-amber-950/90 px-2.5 py-1 text-xs font-mono text-amber-300 border border-amber-800 rounded font-semibold">
-              Original Unprocessed Source
+          {hasResult && !zoomed && view === 'split' && (
+            <span className="hidden items-center gap-1 text-[10px] text-ink-faint lg:flex">
+              <Scissors className="h-3 w-3" /> drag the line
             </span>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Telemetry & Download Action Bar */}
-      <div className="border-t border-slate-800 bg-slate-950/90 px-3.5 py-2.5 sm:px-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Metadata */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
-            {item.result ? (
-              <>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Resolution:</span>
-                  <span className="font-mono tabular-nums text-slate-400">
-                    {item.result.originalWidth}×{item.result.originalHeight}
-                  </span>
-                  <span className="text-cyan-400 font-bold">→</span>
-                  <span className="font-mono tabular-nums font-bold text-cyan-300">
-                    {item.result.upscaledWidth}×{item.result.upscaledHeight} ({item.result.scale}x)
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Size:</span>
-                  <span className="font-mono tabular-nums text-slate-400">
-                    {formatBytes(item.result.originalSize)}
-                  </span>
-                  <span className="text-cyan-400">→</span>
-                  <span className="font-mono tabular-nums text-cyan-300 font-semibold">
-                    {formatBytes(item.result.upscaledSize)}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Time:</span>
-                  <span className="font-mono tabular-nums text-emerald-400">
-                    {item.result.processingTimeMs}ms
-                  </span>
-                </div>
-              </>
-            ) : (
-              <div>
-                <span className="text-slate-500">Original: </span>
-                <span className="font-mono text-slate-300">
-                  {item.originalWidth && item.originalHeight ? `${item.originalWidth}×${item.originalHeight} px · ` : ''}
-                  {formatBytes(item.originalSize)}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-            {item.result && (
-              <>
-                <button
-                  onClick={() => onDownload(item)}
-                  className="flex items-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg shadow-md shadow-cyan-400/20 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Download Image</span>
-                </button>
-              </>
-            )}
-
-            <button
-              onClick={() => onDelete(item.id)}
-              className="p-2 text-slate-400 hover:text-rose-400 bg-slate-800/80 hover:bg-rose-950/40 border border-slate-700/80 hover:border-rose-800/60 rounded-lg transition-colors cursor-pointer"
-              title="Delete"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,98 +1,99 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import JSZip from 'jszip';
+import { CheckCircle2, Play, RefreshCw, X, Layers, Sparkles, Plus } from 'lucide-react';
 import { Header } from './components/Header.tsx';
 import { UploadZone } from './components/UploadZone.tsx';
 import { SettingsPanel } from './components/SettingsPanel.tsx';
 import { ComparisonSlider } from './components/ComparisonSlider.tsx';
 import { BatchQueue } from './components/BatchQueue.tsx';
 import { OpenSourceDocsModal } from './components/OpenSourceDocsModal.tsx';
-import { SAMPLE_IMAGES, SampleItem } from './data/samples.ts';
-import JSZip from 'jszip';
-import {
-  ImageQueueItem,
-  UpscaleSettings,
-  UpscaleResultData,
-} from './types.ts';
-import {
-  Sparkles,
-  CheckCircle,
-  RefreshCw,
-  Zap,
-  ShieldCheck,
-} from 'lucide-react';
+import { type SampleItem } from './data/samples.ts';
+import { checkOutputLimits, MAX_BATCH_SIZE, MAX_INPUT_BYTES } from '@/server/presets.ts';
+import { formatMs } from './lib/format.ts';
+import { DEFAULT_SETTINGS, type ImageQueueItem, type UpscaleResultData, type UpscaleSettings } from './types.ts';
+
+const SETTINGS_KEY = 'openupscale.settings.v2';
+
+function loadSettings(): UpscaleSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<UpscaleSettings>;
+    const merged = { ...DEFAULT_SETTINGS, ...parsed };
+    if (![2, 4, 8].includes(merged.scale)) merged.scale = DEFAULT_SETTINGS.scale;
+    if (!['auto', 'photo', 'digital_art', 'anime', 'document', 'custom'].includes(merged.preset)) merged.preset = 'auto';
+    if (!['jpg', 'png', 'webp'].includes(merged.format)) merged.format = 'png';
+    return merged;
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+interface Toast {
+  message: string;
+  kind: 'ok' | 'error' | 'info';
+}
 
 export default function App() {
-  const [settings, setSettings] = useState<UpscaleSettings>({
-    scale: 2,
-    preset: 'photo',
-    sharpness: 45,
-    denoise: 20,
-    detailBoost: 50,
-    contrast: 0,
-    brightness: 0,
-    saturation: 0,
-    format: 'png',
-    quality: 95,
-  });
-
+  const [settings, setSettings] = useState<UpscaleSettings>(loadSettings);
   const [queue, setQueue] = useState<ImageQueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDocsOpen, setIsDocsOpen] = useState(false);
-  const [isProcessingAny, setIsProcessingAny] = useState(false);
   const [isGeneratingZip, setIsGeneratingZip] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
+  const queueRef = useRef(queue);
+  const settingsRef = useRef(settings);
+  const toastTimer = useRef<number | undefined>(undefined);
+  useEffect(() => { queueRef.current = queue; }, [queue]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* private mode */ }
+  }, [settings]);
 
-  // Helper to read image dimensions
-  const getImageDimensions = (url: string): Promise<{ width: number; height: number }> => {
-    return new Promise((resolve) => {
+  const showToast = useCallback((message: string, kind: Toast['kind'] = 'ok') => {
+    window.clearTimeout(toastTimer.current);
+    setToast({ message, kind });
+    toastTimer.current = window.setTimeout(() => setToast(null), 3800);
+  }, []);
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+
+  const getImageDimensions = (url: string): Promise<{ width: number; height: number }> =>
+    new Promise((resolve) => {
       const img = new Image();
       img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
       img.onerror = () => resolve({ width: 0, height: 0 });
       img.src = url;
     });
-  };
 
-  // Global paste handler (Ctrl+V anywhere on page)
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      if (!e.clipboardData) return;
-      const items = e.clipboardData.items;
-      const files: File[] = [];
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith('image/')) {
-          const file = items[i].getAsFile();
-          if (file) files.push(file);
-        }
-      }
-      if (files.length > 0) {
-        handleFilesSelected(files);
-      }
-    };
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [settings, queue.length]);
+  const updateItem = useCallback((id: string, patch: Partial<ImageQueueItem>) => {
+    setQueue((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+  }, []);
 
-  // Validate in one place so picker, drag/drop, and clipboard follow identical limits.
-  const handleFilesSelected = async (files: File[]) => {
-    const slots = Math.max(0, 20 - queue.length);
-    const candidates = files.slice(0, slots);
-    const valid = candidates.filter((file) =>
-      file.type.startsWith('image/') && file.type !== 'image/svg+xml' && file.size <= 4 * 1024 * 1024
+  /* ---------------- Adding files ---------------- */
+
+  const handleFilesSelected = useCallback(async (files: File[]) => {
+    const slots = Math.max(0, MAX_BATCH_SIZE - queueRef.current.length);
+    if (slots === 0) {
+      showToast(`Queue is full (${MAX_BATCH_SIZE} images)`, 'error');
+      return;
+    }
+    const images = files.filter((file) =>
+      file.type.startsWith('image/') && file.type !== 'image/svg+xml' && file.size <= MAX_INPUT_BYTES
     );
-    if (slots === 0) return showToast('The batch queue is limited to 20 images');
-    if (valid.length !== files.length) showToast('Some files were skipped (image only, 4 MB maximum)');
+    const accepted = images.slice(0, slots);
+    const skipped = files.length - accepted.length;
+    if (skipped > 0) {
+      showToast(`Skipped ${skipped} file(s) — images only, 4 MB max, ${MAX_BATCH_SIZE} per batch`, 'info');
+    }
 
     const newItems: ImageQueueItem[] = [];
-    for (const file of valid) {
+    for (const file of accepted) {
       const previewUrl = URL.createObjectURL(file);
       const dims = await getImageDimensions(previewUrl);
       newItems.push({
         id: crypto.randomUUID(),
-        name: file.name,
+        name: file.name || 'pasted-image',
         file,
         previewUrl,
         originalWidth: dims.width || undefined,
@@ -100,377 +101,361 @@ export default function App() {
         originalSize: file.size,
         status: 'idle',
         progress: 0,
-        settingsSnapshot: { ...settings },
+        settingsSnapshot: { ...settingsRef.current },
       });
     }
-
+    if (newItems.length === 0) return;
     setQueue((prev) => [...prev, ...newItems]);
-    if (newItems.length > 0) {
-      setSelectedId(newItems[0].id);
-      showToast(`Added ${newItems.length} image${newItems.length > 1 ? 's' : ''}`);
+    setSelectedId(newItems[0].id);
+    showToast(`Added ${newItems.length} image${newItems.length > 1 ? 's' : ''}`);
+  }, [showToast]);
+
+  const handleSampleSelect = useCallback(async (sample: SampleItem) => {
+    try {
+      const response = await fetch(sample.url);
+      if (!response.ok) throw new Error('sample unavailable');
+      const blob = await response.blob();
+      await handleFilesSelected([new File([blob], `${sample.id}.jpg`, { type: blob.type || 'image/jpeg' })]);
+    } catch {
+      showToast('Could not load that sample', 'error');
     }
-  };
+  }, [handleFilesSelected, showToast]);
 
-  // Select sample benchmark
-  const handleSampleSelect = async (sample: SampleItem) => {
-    const itemId = crypto.randomUUID();
-    const newItem: ImageQueueItem = {
-      id: itemId,
-      name: `${sample.name}.jpg`,
-      previewUrl: sample.url,
-      originalSize: 15000,
-      originalWidth: 400,
-      originalHeight: 300,
-      status: 'idle',
-      progress: 0,
-      isSample: true,
-      settingsSnapshot: {
-        ...settings,
-        preset: sample.recommendedPreset,
-      },
+  // Paste anywhere (Ctrl/Cmd+V)
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      if (!event.clipboardData) return;
+      const files: File[] = [];
+      for (const item of event.clipboardData.items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      if (files.length > 0) void handleFilesSelected(files);
     };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [handleFilesSelected]);
 
-    setQueue((prev) => [newItem, ...prev.filter((i) => i.id !== itemId)]);
-    setSelectedId(itemId);
-  };
+  /* ---------------- Processing ---------------- */
 
-  // Process a queue item entirely on the server. The browser only uploads and renders the result.
-  const processItem = async (item: ImageQueueItem, customSettings?: UpscaleSettings) => {
-    const activeOpts = customSettings || item.settingsSnapshot;
-    setQueue((prev) => prev.map((i) =>
-      i.id === item.id ? { ...i, status: 'processing', progress: 15, errorMessage: undefined } : i
-    ));
-    setIsProcessingAny(true);
+  const processItem = useCallback(async (id: string, opts: UpscaleSettings): Promise<boolean> => {
+    const item = queueRef.current.find((i) => i.id === id);
+    if (!item || item.status === 'processing') return false;
+
+    const limit = checkOutputLimits(item.originalWidth, item.originalHeight, opts.scale);
+    if (!limit.ok) {
+      updateItem(id, { status: 'error', progress: 0, errorMessage: limit.message });
+      showToast('That output exceeds the safety limits', 'error');
+      return false;
+    }
+
+    updateItem(id, { status: 'processing', progress: 10, errorMessage: undefined, settingsSnapshot: opts });
 
     try {
       let uploadFile = item.file;
       if (!uploadFile) {
-        const response = await fetch(item.previewUrl);
-        if (!response.ok) throw new Error('Could not load the sample image');
-        const blob = await response.blob();
+        const sampleResponse = await fetch(item.previewUrl);
+        if (!sampleResponse.ok) throw new Error('Could not load the sample image');
+        const blob = await sampleResponse.blob();
         uploadFile = new File([blob], item.name, { type: blob.type || 'image/jpeg' });
       }
 
       const form = new FormData();
       form.append('file', uploadFile, item.name);
-      Object.entries(activeOpts).forEach(([key, value]) => form.append(key, String(value)));
-      setQueue((prev) => prev.map((i) => i.id === item.id ? { ...i, progress: 45 } : i));
+      form.append('scale', String(opts.scale));
+      form.append('preset', opts.preset);
+      form.append('format', opts.format);
+      if (opts.format !== 'png') form.append('quality', String(opts.quality));
+      // Enhancement sliders only ship when the user tuned them ("Custom");
+      // otherwise the server applies the benchmark-tuned defaults per mode.
+      if (opts.preset === 'custom') {
+        form.append('sharpness', String(opts.sharpness));
+        form.append('denoise', String(opts.denoise));
+        form.append('detailBoost', String(opts.detailBoost));
+      }
+      if (opts.contrast !== 0) form.append('contrast', String(opts.contrast));
+      if (opts.brightness !== 0) form.append('brightness', String(opts.brightness));
+      if (opts.saturation !== 0) form.append('saturation', String(opts.saturation));
 
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 55_000);
       let response: Response;
       try {
         response = await fetch('/api/upscale', { method: 'POST', body: form, signal: controller.signal });
+        updateItem(id, { progress: 45 });
       } finally {
         window.clearTimeout(timeout);
       }
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error || `Cloud processing failed (${response.status})`);
+        throw new Error(payload?.error || `Processing failed (${response.status})`);
       }
-      if (!response.headers.get('content-type')?.startsWith('image/')) {
-        throw new Error('The cloud returned an invalid image response');
-      }
-
-      const encodedMetadata = response.headers.get('x-upscale-metadata');
-      if (!encodedMetadata) throw new Error('The cloud response is missing image metadata');
-      const base64 = encodedMetadata.replace(/-/g, '+').replace(/_/g, '/');
+      const encoded = response.headers.get('x-upscale-metadata');
+      if (!encoded) throw new Error('The server response is missing image metadata');
+      const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
       const metadata = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')));
       const blob = await response.blob();
-      if (!blob.size) throw new Error('The cloud returned an empty image');
-      const resultUrl = URL.createObjectURL(blob);
+      if (!blob.size) throw new Error('The server returned an empty image');
 
+      // Drop the result if the item was removed while processing.
+      if (!queueRef.current.some((i) => i.id === id)) return;
+
+      const resultUrl = URL.createObjectURL(blob);
       setQueue((prev) => prev.map((i) => {
-        if (i.id !== item.id) return i;
+        if (i.id !== id) return i;
         if (i.result?.dataUrl.startsWith('blob:')) URL.revokeObjectURL(i.result.dataUrl);
         return {
           ...i,
-          status: 'success',
+          status: 'success' as const,
           progress: 100,
-          originalWidth: metadata.originalWidth,
-          originalHeight: metadata.originalHeight,
-          settingsSnapshot: activeOpts,
+          errorMessage: undefined,
+          originalWidth: metadata.originalWidth ?? i.originalWidth,
+          originalHeight: metadata.originalHeight ?? i.originalHeight,
+          settingsSnapshot: opts,
           result: {
             id: crypto.randomUUID(),
             dataUrl: resultUrl,
             originalName: item.name,
-            scale: activeOpts.scale,
-            preset: activeOpts.preset,
+            scale: opts.scale,
             ...metadata,
-          } as UpscaleResultData,
+          } as unknown as UpscaleResultData,
         };
       }));
-      showToast(`Enhanced to ${activeOpts.scale}x in ${metadata.processingTimeMs} ms`);
-    } catch (error: any) {
-      const message = error?.name === 'AbortError'
-        ? 'Cloud processing timed out. Try a smaller scale or image.'
-        : error?.message || 'Processing failed';
-      setQueue((prev) => prev.map((i) =>
-        i.id === item.id ? { ...i, status: 'error', progress: 0, errorMessage: message } : i
-      ));
-      showToast(message);
-    } finally {
-      setIsProcessingAny(false);
+      const modeNote = metadata.preset ? ` · ${metadata.preset}` : '';
+      showToast(`Upscaled ${opts.scale}× in ${formatMs(metadata.processingTimeMs ?? 0)}${modeNote}`);
+      return true;
+    } catch (error) {
+      const aborted = (error as Error)?.name === 'AbortError';
+      const message = aborted
+        ? 'Timed out after 55s — try a smaller image or scale'
+        : (error as Error)?.message || 'Processing failed';
+      if (queueRef.current.some((i) => i.id === id)) {
+        updateItem(id, { status: 'error', progress: 0, errorMessage: message });
+      }
+      showToast(message, 'error');
+      return false;
     }
-  };
+  }, [showToast, updateItem]);
 
-  // Upscale all idle items
-  const handleProcessAll = async () => {
-    const idleItems = queue.filter((i) => i.status === 'idle');
-    if (idleItems.length === 0) return;
+  const isProcessingAny = queue.some((i) => i.status === 'processing');
 
-    for (const item of idleItems) {
-      await processItem(item, settings);
+  const handleProcessAll = useCallback(async () => {
+    const opts = settingsRef.current;
+    const ids = queueRef.current.filter((i) => i.status === 'idle' || i.status === 'error').map((i) => i.id);
+    if (ids.length === 0) return;
+    let successes = 0;
+    for (const id of ids) {
+      if (await processItem(id, opts)) successes += 1;
     }
-  };
+    const failures = ids.length - successes;
+    if (failures > 0) showToast(`${successes}/${ids.length} done · ${failures} failed`, 'error');
+    else showToast(`Upscaled ${ids.length} image${ids.length > 1 ? 's' : ''}`);
+  }, [processItem, showToast]);
 
-  // Instant client-side download: zero server round trips, 100% reliable on Vercel
-  const handleDownloadItem = (item: ImageQueueItem) => {
-    if (!item.result) return;
+  /* ---------------- Output ---------------- */
 
-    const downloadSrc = item.result.dataUrl;
-    const filename = `${item.name.replace(/\.[^/.]+$/, '')}_upscaled_${item.result.scale}x.${item.result.format}`;
-
+  const triggerDownload = (url: string, filename: string) => {
     const link = document.createElement('a');
-    link.href = downloadSrc;
+    link.href = url;
     link.download = filename;
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
-
-    showToast(`Downloaded ${filename}`);
+    link.remove();
   };
 
-  // Client-side ZIP generation with JSZip: zero server memory load, zero Vercel payload limits
-  const handleDownloadAllZip = async () => {
-    const completedItems = queue.filter((i) => i.status === 'success' && i.result);
-    if (completedItems.length === 0) return;
+  const handleDownloadItem = useCallback((item: ImageQueueItem) => {
+    if (!item.result) return;
+    const base = item.name.replace(/\.[^/.]+$/, '') || 'image';
+    triggerDownload(item.result.dataUrl, `${base}_${item.result.scale}x.${item.result.format}`);
+  }, []);
 
+  const handleDownloadAllZip = useCallback(async () => {
+    const completed = queueRef.current.filter((i) => i.status === 'success' && i.result);
+    if (completed.length === 0) return;
     setIsGeneratingZip(true);
     try {
       const zip = new JSZip();
-
-      for (const item of completedItems) {
-        if (item.result?.dataUrl) {
-          const output = await fetch(item.result.dataUrl).then((response) => response.blob());
-          const filename = `${item.name.replace(/\.[^/.]+$/, '')}_upscaled_${item.result.scale}x.${item.result.format}`;
-          zip.file(filename, output);
-        }
+      const used = new Set<string>();
+      for (const [index, item] of completed.entries()) {
+        const blob = await fetch(item.result!.dataUrl).then((r) => r.blob());
+        const base = item.name.replace(/\.[^/.]+$/, '') || 'image';
+        let filename = `${base}_${item.result!.scale}x.${item.result!.format}`;
+        if (used.has(filename)) filename = `${index + 1}_${filename}`;
+        used.add(filename);
+        zip.file(filename, blob);
       }
-
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `OpenUpscale_Batch_${Date.now()}.zip`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
-      showToast(`Downloaded ${completedItems.length} images as ZIP archive`);
-    } catch (error: any) {
-      showToast(`ZIP error: ${error.message}`);
+      const archive = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(archive);
+      triggerDownload(url, `openupscale-${completed.length}-images.zip`);
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      showToast(`ZIP with ${completed.length} images downloaded`);
+    } catch (error) {
+      showToast(`Could not build the ZIP: ${(error as Error).message}`, 'error');
     } finally {
       setIsGeneratingZip(false);
     }
-  };
+  }, [showToast]);
 
-  const releaseItemUrls = (item: ImageQueueItem) => {
-    if (item.file && item.previewUrl.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl);
-    if (item.result?.dataUrl.startsWith('blob:')) URL.revokeObjectURL(item.result.dataUrl);
-  };
-
-  // Remove single item and release browser memory. The cloud copy was already discarded.
-  const handleRemoveItem = (id: string) => {
-    const removed = queue.find((item) => item.id === id);
-    if (removed) releaseItemUrls(removed);
-    const remaining = queue.filter((item) => item.id !== id);
+  const handleRemoveItem = useCallback((id: string) => {
+    const removed = queueRef.current.find((item) => item.id === id);
+    if (removed) {
+      if (removed.previewUrl.startsWith('blob:')) URL.revokeObjectURL(removed.previewUrl);
+      if (removed.result?.dataUrl.startsWith('blob:')) URL.revokeObjectURL(removed.result.dataUrl);
+    }
+    const remaining = queueRef.current.filter((item) => item.id !== id);
     setQueue(remaining);
-    if (selectedId === id) setSelectedId(remaining[0]?.id ?? null);
-  };
+    setSelectedId((prev) => (prev === id ? (remaining[0]?.id ?? null) : prev));
+  }, []);
 
-  // Clear all
-  const handleClearAll = () => {
-    queue.forEach(releaseItemUrls);
+  const handleClearAll = useCallback(() => {
+    for (const item of queueRef.current) {
+      if (item.previewUrl.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl);
+      if (item.result?.dataUrl.startsWith('blob:')) URL.revokeObjectURL(item.result.dataUrl);
+    }
     setQueue([]);
     setSelectedId(null);
-    showToast('Queue cleared');
-  };
+    showToast('Queue cleared', 'info');
+  }, [showToast]);
 
-  const selectedItem = queue.find((i) => i.id === selectedId) || queue[0];
+  const handleSettingsChange = useCallback((next: UpscaleSettings) => {
+    setSettings(next);
+    // Un-started items follow the panel; processed items keep their snapshot.
+    setQueue((prev) => prev.map((i) => (i.status === 'idle' ? { ...i, settingsSnapshot: { ...next } } : i)));
+  }, []);
+
+  const selectedItem = queue.find((i) => i.id === selectedId) ?? queue[0];
+  const hasImages = queue.length > 0;
+
+  const selectedLimit = selectedItem
+    ? checkOutputLimits(selectedItem.originalWidth, selectedItem.originalHeight, settings.scale)
+    : { ok: true as const, message: undefined as string | undefined };
+
+  const primaryLabel = !selectedItem ? 'Upscale'
+    : selectedItem.status === 'processing' ? 'Processing…'
+    : selectedItem.status === 'success' ? 'Upscale again'
+    : selectedItem.status === 'error' ? 'Retry upscale'
+    : `Upscale ${settings.scale}×`;
 
   return (
-    <div className="min-h-screen bg-[#0b0f17] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
-      {/* Top Bar Navigation */}
-      <Header onOpenDocs={() => setIsDocsOpen(true)} activeCount={queue.length} />
+    <div className="flex min-h-screen flex-col bg-canvas text-ink">
+      <Header onOpenDocs={() => setIsDocsOpen(true)} />
 
-      {/* Main Container */}
-      <main className="flex-1 mx-auto w-full max-w-7xl px-3.5 py-5 sm:px-6 space-y-6">
-        {selectedItem ? (
-          <div className="space-y-5">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-              {/* Left 2 Cols: Comparison Slider */}
-              <div className="lg:col-span-2 space-y-3">
-                <ComparisonSlider
-                  item={selectedItem}
-                  onDownload={handleDownloadItem}
-                  onDelete={handleRemoveItem}
-                />
-              </div>
-
-              {/* Right 1 Col: Settings & Action */}
-              <div className="lg:col-span-1 space-y-3">
-                <SettingsPanel
-                  settings={settings}
-                  onChange={(newSettings) => {
-                    setSettings(newSettings);
-                    if (selectedItem && selectedItem.status === 'idle') {
-                      setQueue((prev) =>
-                        prev.map((i) =>
-                          i.id === selectedItem.id
-                            ? { ...i, settingsSnapshot: { ...newSettings } }
-                            : i
-                        )
-                      );
-                    }
-                  }}
-                  disabled={isProcessingAny}
-                  activeDimensions={
-                    selectedItem.originalWidth && selectedItem.originalHeight
-                      ? { width: selectedItem.originalWidth, height: selectedItem.originalHeight }
-                      : undefined
-                  }
-                />
-
-                {/* Primary Action Button */}
-                {selectedItem.status === 'idle' ? (
-                  <button
-                    onClick={() => processItem(selectedItem, settings)}
-                    disabled={isProcessingAny}
-                    className="w-full py-3 px-4 rounded-xl font-bold text-sm text-slate-950 bg-gradient-to-r from-cyan-400 to-indigo-400 hover:from-cyan-300 hover:to-indigo-300 shadow-md shadow-cyan-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    <span>Upscale Image ({settings.scale}x)</span>
-                  </button>
-                ) : selectedItem.status === 'processing' ? (
-                  <div className="w-full py-3 px-4 rounded-xl font-medium text-sm text-cyan-300 bg-slate-800 border border-cyan-500/30 flex items-center justify-center gap-2">
-                    <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
-                    <span>Processing in Cloud...</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => processItem(selectedItem, settings)}
-                    disabled={isProcessingAny}
-                    className="w-full py-2.5 px-4 rounded-xl font-medium text-xs text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5 text-cyan-400" />
-                    <span>{selectedItem.status === 'error' ? 'Retry Processing' : 'Re-Upscale with Current Settings'}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Batch Queue Bar */}
-            <BatchQueue
-              items={queue}
-              selectedId={selectedId}
-              onSelectItem={(id) => setSelectedId(id)}
-              onProcessAll={handleProcessAll}
-              onProcessItem={(id) => {
-                const item = queue.find((i) => i.id === id);
-                if (item) processItem(item, settings);
-              }}
-              onRemoveItem={handleRemoveItem}
-              onClearAll={handleClearAll}
-              onDownloadItem={handleDownloadItem}
-              onDownloadAllZip={handleDownloadAllZip}
-              isProcessingAny={isProcessingAny}
-              isGeneratingZip={isGeneratingZip}
-            />
-
-            {/* Upload Zone */}
-            <UploadZone
-              onFilesSelected={handleFilesSelected}
-              onSampleSelected={handleSampleSelect}
-              disabled={isProcessingAny}
-            />
-          </div>
-        ) : (
-          /* Empty State */
-          <div className="space-y-6 max-w-3xl mx-auto py-8">
-            <div className="text-center space-y-2">
-              <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-                Cloud Image Upscaler
-              </h1>
-              <p className="text-sm text-slate-400 max-w-lg mx-auto">
-                Free open-source super-resolution. Zero local CPU load, instant batch downloads,
-                and automatic file deletion.
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">
+        {!hasImages ? (
+          <div className="mx-auto flex max-w-3xl flex-col gap-6 py-4">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Upscale images in the cloud</h1>
+              <p className="mt-2 text-sm text-ink-soft">
+                Sharper, larger photos, art, and scans. No account, no tracking — files are never stored.
               </p>
             </div>
+            <UploadZone variant="full" onFilesSelected={handleFilesSelected} onSampleSelected={handleSampleSelect} />
+            <ul className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-ink-soft">
+              <li className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 text-brand" /> Auto-tuned per image</li>
+              <li className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5 text-brand" /> Batch up to {MAX_BATCH_SIZE} + ZIP</li>
+              <li className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-ok" /> Nothing kept on the server</li>
+            </ul>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="flex min-w-0 flex-col gap-3">
+              <ComparisonSlider
+                item={selectedItem}
+                onDownload={handleDownloadItem}
+                onDelete={handleRemoveItem}
+              />
+              <BatchQueue
+                items={queue}
+                selectedId={selectedItem?.id ?? null}
+                onSelectItem={setSelectedId}
+                onProcessItem={(id) => void processItem(id, settingsRef.current)}
+                onProcessAll={() => void handleProcessAll()}
+                onRemoveItem={handleRemoveItem}
+                onClearAll={handleClearAll}
+                onDownloadItem={handleDownloadItem}
+                onDownloadAllZip={() => void handleDownloadAllZip()}
+                isProcessingAny={isProcessingAny}
+                isGeneratingZip={isGeneratingZip}
+              />
+            </div>
 
-            <UploadZone
-              onFilesSelected={handleFilesSelected}
-              onSampleSelected={handleSampleSelect}
-              disabled={isProcessingAny}
-            />
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => selectedItem && void processItem(selectedItem.id, settings)}
+                disabled={isProcessingAny || !selectedLimit.ok}
+                title={selectedLimit.ok ? 'Process with the current settings' : selectedLimit.message}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isProcessingAny
+                  ? <RefreshCw className="h-4 w-4 animate-spin" />
+                  : selectedItem?.status === 'error'
+                    ? <RefreshCw className="h-4 w-4" />
+                    : <Play className="h-4 w-4 fill-current" />}
+                <span>{primaryLabel}</span>
+              </button>
+              {!selectedLimit.ok && <p className="-mt-1 text-xs text-err">{selectedLimit.message}</p>}
+
+              <SettingsPanel
+                settings={settings}
+                onChange={handleSettingsChange}
+                disabled={isProcessingAny}
+                activeDimensions={
+                  selectedItem?.originalWidth && selectedItem?.originalHeight
+                    ? { width: selectedItem.originalWidth, height: selectedItem.originalHeight }
+                    : undefined
+                }
+              />
+
+              <details className="rounded-xl border border-line bg-surface p-1">
+                <summary className="flex cursor-pointer list-none items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-ink-soft transition hover:text-ink">
+                  <Plus className="h-3.5 w-3.5" /> Add more images
+                </summary>
+                <div className="px-1 pb-1">
+                  <UploadZone variant="compact" onFilesSelected={handleFilesSelected} onSampleSelected={handleSampleSelect} disabled={isProcessingAny} />
+                </div>
+              </details>
+            </div>
           </div>
         )}
-
-        {/* Clean Privacy Callout */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
-            <span>100% Privacy: Files are processed ephemerally and never retained. Zero tracking.</span>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <Zap className="h-4 w-4 text-cyan-400 shrink-0" />
-            <span>Vercel Serverless Ready · Lanczos-3 Sinc Resampling</span>
-          </div>
-        </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950/80 py-5 text-xs text-slate-400">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-200">OpenUpscale</span>
-            <span>·</span>
-            <span>Free Open Source Cloud Upscaler</span>
-            <span>·</span>
-            <span className="font-mono text-cyan-400">MIT</span>
-          </div>
-
-          <div className="flex items-center gap-5">
-            <button
-              onClick={() => setIsDocsOpen(true)}
-              className="hover:text-white transition-colors cursor-pointer"
-            >
-              Docs & Models
+      <footer className="border-t border-line bg-surface">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-ink-soft sm:px-6">
+          <span className="flex items-center gap-2">
+            <span className="font-semibold text-ink">OpenUpscale</span>
+            <span>· free · open-source · MIT</span>
+          </span>
+          <span className="flex items-center gap-4">
+            <button onClick={() => setIsDocsOpen(true)} className="cursor-pointer underline-offset-2 hover:text-ink hover:underline">
+              How it works
             </button>
-            <a
-              href="https://github.com/alistairfoxlondon-pixel/Upscaler-Free"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-white transition-colors"
-            >
-              GitHub
+            <a href="https://github.com/alistairfoxlondon-pixel/Upscaler-Free" target="_blank" rel="noreferrer" className="underline-offset-2 hover:text-ink hover:underline">
+              Source
             </a>
-            <span>Zero Tracking</span>
-          </div>
+          </span>
         </div>
       </footer>
 
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs shadow-2xl animate-fade-in">
-          <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-medium shadow-lg animate-slide-up ${
+            toast.kind === 'error'
+              ? 'border-red-200 bg-red-50 text-err'
+              : toast.kind === 'info'
+                ? 'border-line bg-surface text-ink-soft'
+                : 'border-emerald-200 bg-emerald-50 text-ok'
+          }`}
+        >
+          {toast.kind === 'error' ? <X className="h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}
+          <span>{toast.message}</span>
         </div>
       )}
 
-      {/* Docs Modal */}
       <OpenSourceDocsModal isOpen={isDocsOpen} onClose={() => setIsDocsOpen(false)} />
     </div>
   );

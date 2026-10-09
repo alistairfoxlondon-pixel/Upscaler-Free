@@ -1,4 +1,4 @@
-export type UpscalePreset = 'photo' | 'digital_art' | 'anime' | 'document' | 'custom';
+export type UpscalePreset = 'auto' | 'photo' | 'digital_art' | 'anime' | 'document' | 'custom';
 export type ExportFormat = 'jpg' | 'png' | 'webp';
 export type ScaleFactor = 2 | 4 | 8;
 
@@ -15,6 +15,19 @@ export interface UpscaleSettings {
   quality: number;
 }
 
+export const DEFAULT_SETTINGS: UpscaleSettings = {
+  scale: 2,
+  preset: 'auto',
+  sharpness: 45,
+  denoise: 10,
+  detailBoost: 35,
+  contrast: 0,
+  brightness: 0,
+  saturation: 0,
+  format: 'png',
+  quality: 95,
+};
+
 export interface UpscaleResultData {
   id: string;
   dataUrl: string;
@@ -29,7 +42,8 @@ export interface UpscaleResultData {
   upscaledSize: number;
   processingTimeMs: number;
   scale: ScaleFactor;
-  preset: UpscalePreset;
+  preset: string;
+  contentKind?: string;
 }
 
 export interface ImageQueueItem {
@@ -54,6 +68,13 @@ export interface SystemInfo {
   libraries: Array<{ name: string; version: string; role: string }>;
   supportedFormats: string[];
   exportFormats: string[];
+  presets: string[];
+  limits: {
+    maxInputBytes: number;
+    maxInputPixels: number;
+    maxOutputDimension: number;
+    maxOutputPixels: number;
+  };
   privacy: {
     ephemeralMode: boolean;
     persistentStorage: boolean;

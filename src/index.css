@@ -1,27 +1,169 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
-@layer base {
-  * {
-    border-color: rgba(255, 255, 255, 0.08);
+@theme {
+  /* Telenor's brand typeface is "Gramophone" (proprietary). If the visitor
+     has it installed locally we use it; otherwise we fall back to the
+     self-hosted, metrically-similar open font (SIL OFL) — no third-party
+     font CDN, keeping the site fully private. */
+  --font-sans: 'Gramophone', 'Hanken Grotesk Variable', 'Segoe UI', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'SFMono-Regular', ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  --color-canvas: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-ink: #101623;
+  --color-ink-soft: #5b6575;
+  --color-ink-faint: #8a93a3;
+  --color-line: #e2e6ec;
+  --color-line-strong: #cfd5df;
+  --color-brand: #0a57ff;
+  --color-brand-strong: #0847d1;
+  --color-brand-soft: #e9f0ff;
+  --color-ok: #067647;
+  --color-err: #b42318;
+  --color-warn: #93370d;
+
+  --animate-fade-in: fade-in 0.18s ease-out;
+  --animate-slide-up: slide-up 0.22s ease-out;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
-  
-  /* Custom smooth scrollbar */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
   }
-  ::-webkit-scrollbar-track {
-    background: #0f172a;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: #334155;
-    border-radius: 9999px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #475569;
-  }
+}
+
+/* Prefer the locally installed Gramophone font when present. */
+@font-face {
+  font-family: 'Gramophone';
+  src: local('Gramophone'), local('Gramophone Regular'), local('Gramophone-Regular'), local('Gramophone Book');
+  font-weight: 300 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gramophone';
+  src: local('Gramophone Medium'), local('Gramophone-Medium');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Gramophone';
+  src: local('Gramophone Semibold'), local('Gramophone-Semibold'), local('Gramophone Bold'), local('Gramophone-Bold');
+  font-weight: 600 800;
+  font-display: swap;
+}
+
+html {
+  background: var(--color-canvas);
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* Compact, consistent range sliders */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--color-brand) 0%,
+    var(--color-brand) var(--range-progress, 50%),
+    var(--color-line-strong) var(--range-progress, 50%),
+    var(--color-line-strong) 100%
+  );
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -5px;
+  height: 14px;
+  width: 14px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 2px solid var(--color-brand);
+  box-shadow: 0 1px 3px rgb(16 22 35 / 0.25);
+  transition: transform 0.12s ease;
+}
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-line-strong);
+}
+input[type='range']::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-brand);
+}
+input[type='range']::-moz-range-thumb {
+  height: 14px;
+  width: 14px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 2px solid var(--color-brand);
+  box-shadow: 0 1px 3px rgb(16 22 35 / 0.25);
+}
+input[type='range']:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Thin, light scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-faint);
+}
+
+/* Checkered transparency backdrop for the viewer */
+.transparency-grid {
+  background-image:
+    linear-gradient(45deg, #dfe3ea 25%, transparent 25%),
+    linear-gradient(-45deg, #dfe3ea 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #dfe3ea 75%),
+    linear-gradient(-45deg, transparent 75%, #dfe3ea 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-color: #f1f3f6;
 }

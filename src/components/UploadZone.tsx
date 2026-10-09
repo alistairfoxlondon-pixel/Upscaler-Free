@@ -1,159 +1,131 @@
-import React, { useRef, useState } from 'react';
-import { UploadCloud, Sparkles, AlertCircle, Clipboard } from 'lucide-react';
-import { SAMPLE_IMAGES, SampleItem } from '../data/samples.ts';
+import { useRef, useState } from 'react';
+import { ImagePlus, Sparkles } from 'lucide-react';
+import { SAMPLE_IMAGES, type SampleItem } from '../data/samples.ts';
 
 interface UploadZoneProps {
   onFilesSelected: (files: File[]) => void;
   onSampleSelected: (sample: SampleItem) => void;
   disabled?: boolean;
+  variant?: 'full' | 'compact';
 }
 
 export const UploadZone: React.FC<UploadZoneProps> = ({
   onFilesSelected,
   onSampleSelected,
   disabled = false,
+  variant = 'full',
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const validateAndAddFiles = (fileList: FileList | null) => {
+  const acceptFiles = (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
-    setErrorMessage(null);
-
-    const validFiles: File[] = [];
-    const MAX_SIZE = 4 * 1024 * 1024;
-
-    for (let i = 0; i < fileList.length; i++) {
-      const file = fileList[i];
-      if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
-        setErrorMessage(`"${file.name}" is not a supported raster image.`);
-        continue;
-      }
-      if (file.size > MAX_SIZE) {
-        setErrorMessage(`"${file.name}" exceeds the 4 MB cloud limit.`);
-        continue;
-      }
-      validFiles.push(file);
-    }
-
-    if (validFiles.length > 0) {
-      onFilesSelected(validFiles);
-    }
+    onFilesSelected(Array.from(fileList));
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!disabled) setIsDragOver(true);
-  };
+  const input = (
+    <input
+      ref={fileInputRef}
+      type="file"
+      multiple
+      accept="image/jpeg,image/png,image/webp,image/avif,image/tiff,image/gif,image/heic,image/heif"
+      disabled={disabled}
+      onChange={(e) => {
+        acceptFiles(e.target.files);
+        e.target.value = '';
+      }}
+      className="hidden"
+    />
+  );
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    if (!disabled && e.dataTransfer.files) {
-      validateAndAddFiles(e.dataTransfer.files);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Main Drag & Drop Zone */}
-      <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => !disabled && fileInputRef.current?.click()}
-        className={`relative flex flex-col items-center justify-center p-8 sm:p-10 rounded-2xl border-2 border-dashed transition-all cursor-pointer text-center ${
-          isDragOver
-            ? 'border-cyan-400 bg-cyan-950/20 shadow-xl shadow-cyan-500/10'
-            : 'border-slate-800 bg-slate-900/50 hover:border-slate-700 hover:bg-slate-900/80'
-        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept="image/jpeg,image/png,image/webp,image/avif,image/tiff,image/gif,image/heic,image/heif"
-          disabled={disabled}
-          onChange={(e) => validateAndAddFiles(e.target.files)}
-          className="hidden"
-        />
-
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400 mb-3 border border-cyan-500/20">
-          <UploadCloud className="h-6 w-6" />
-        </div>
-
-        <h3 className="text-base font-semibold text-white mb-1">
-          Drop images here or <span className="text-cyan-400 hover:underline">browse</span>
-        </h3>
-        <p className="text-xs text-slate-400 mb-3">
-          Paste with Ctrl+V · Batch up to 20 images · 4 MB each
-        </p>
-
-        {/* Concise format tags */}
-        <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500">
-          <span>PNG</span>
-          <span>·</span>
-          <span>JPG</span>
-          <span>·</span>
-          <span>WebP</span>
-          <span>·</span>
-          <span>AVIF</span>
-          <span>·</span>
-          <span>TIFF</span>
-          <span>·</span>
-          <span>HEIC</span>
-        </div>
-      </div>
-
-      {/* Error alert */}
-      {errorMessage && (
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 text-rose-300 text-xs">
-          <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-
-      {/* Sample Benchmarks */}
-      <div className="rounded-xl bg-slate-900/40 border border-slate-800/80 p-3.5">
-        <div className="flex items-center justify-between mb-2.5">
-          <div className="flex items-center gap-1.5 text-xs font-medium text-slate-300">
-            <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Benchmark samples:</span>
+  if (variant === 'compact') {
+    return (
+      <div className="space-y-2">
+        {input}
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => fileInputRef.current?.click()}
+            className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-2 py-1.5 text-[11px] font-medium text-ink-soft transition hover:border-brand/40 hover:text-ink disabled:opacity-50"
+          >
+            <ImagePlus className="h-3.5 w-3.5" /> Upload
+          </button>
+          <div className="flex gap-1.5">
+            {SAMPLE_IMAGES.map((sample) => (
+              <button
+                key={sample.id}
+                type="button"
+                disabled={disabled}
+                onClick={() => onSampleSelected(sample)}
+                title={`Try the ${sample.category.toLowerCase()} sample`}
+                className="h-7 w-7 cursor-pointer overflow-hidden rounded-lg border border-line transition hover:border-brand/60 disabled:opacity-50"
+              >
+                <img src={sample.url} alt="" className="h-full w-full object-cover" />
+              </button>
+            ))}
           </div>
         </div>
+      </div>
+    );
+  }
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+  return (
+    <div className="space-y-3">
+      {input}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label="Upload images: click, drag and drop, or paste"
+        onDragOver={(e) => { e.preventDefault(); if (!disabled) setIsDragOver(true); }}
+        onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDragOver(false);
+          if (!disabled && e.dataTransfer.files) acceptFiles(e.dataTransfer.files);
+        }}
+        onClick={() => !disabled && fileInputRef.current?.click()}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
+        className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors sm:py-14 ${
+          isDragOver
+            ? 'border-brand bg-brand-soft'
+            : 'border-line-strong bg-surface hover:border-brand/50'
+        } ${disabled ? 'pointer-events-none opacity-50' : ''}`}
+      >
+        <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-soft text-brand">
+          <ImagePlus className="h-5 w-5" />
+        </span>
+        <p className="text-sm font-semibold text-ink">
+          Drop images, <span className="text-brand underline underline-offset-2">browse</span>, or paste
+        </p>
+        <p className="mt-1 text-xs text-ink-soft">
+          PNG · JPG · WebP · AVIF · TIFF · GIF — 4 MB each, up to 20 at once
+        </p>
+      </div>
+
+      <div>
+        <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+          <Sparkles className="h-3 w-3 text-brand" /> Try a sample
+        </p>
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
           {SAMPLE_IMAGES.map((sample) => (
             <button
               key={sample.id}
               type="button"
               disabled={disabled}
               onClick={() => onSampleSelected(sample)}
-              className="group relative flex items-center gap-2.5 p-2 rounded-lg border border-slate-800/90 bg-slate-950/60 hover:border-cyan-500/40 hover:bg-slate-900 transition-all text-left cursor-pointer"
+              title={sample.description}
+              className="group flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-surface p-1.5 text-left transition hover:border-brand/50 disabled:opacity-50"
             >
-              <img
-                src={sample.url}
-                alt={sample.name}
-                referrerPolicy="no-referrer"
-                className="h-10 w-10 rounded object-cover shrink-0"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-medium text-slate-200 truncate group-hover:text-cyan-300">
-                  {sample.name}
-                </div>
-                <div className="text-[10px] text-slate-500 font-mono truncate">
-                  {sample.category}
-                </div>
-              </div>
+              <img src={sample.url} alt="" className="h-8 w-8 shrink-0 rounded object-cover" />
+              <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-ink-soft group-hover:text-ink">
+                {sample.category}
+              </span>
             </button>
           ))}
         </div>
