@@ -1,0 +1,487 @@
+{
+  "dataset": "BSDS500",
+  "commit": "a04b7c6c3a9f0ace74bf205c72a43d32e1c72722",
+  "selection": "lexicographically sorted test images, every fourth (50); val every tenth (10)",
+  "images": [
+    {
+      "id": "100007",
+      "file": "100007.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/100007.jpg",
+      "sha256": "464449ecba30a5a5c229c0133059c83b034e9000bd1d7752a189a8cf21182bf9",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/100007.jpg"
+    },
+    {
+      "id": "101027",
+      "file": "101027.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/101027.jpg",
+      "sha256": "22903efe16abd94cfd821952de276cc36c531070c27bd84de7a3fb958bd64bc9",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/101027.jpg"
+    },
+    {
+      "id": "103029",
+      "file": "103029.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/103029.jpg",
+      "sha256": "a05f1c0b30f4e18ad31364abacb54ec55300704ff3a4f8b2889f400bc3757da1",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/103029.jpg"
+    },
+    {
+      "id": "105027",
+      "file": "105027.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/105027.jpg",
+      "sha256": "f6cba0ae618d793b67729ba561461be7b5339aeaad27429f3a2804f588a4e623",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/105027.jpg"
+    },
+    {
+      "id": "107045",
+      "file": "107045.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/107045.jpg",
+      "sha256": "11ee811a5c67b3499eabbafc9157cd0bce74df369c57e18c988123f576a6f20c",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/107045.jpg"
+    },
+    {
+      "id": "108069",
+      "file": "108069.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/108069.jpg",
+      "sha256": "a6d8ba350cac0701edc115fa583bf666231c4e1526801d0a53cea495a15b433a",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/108069.jpg"
+    },
+    {
+      "id": "117025",
+      "file": "117025.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/117025.jpg",
+      "sha256": "4239e66eb251e85d266b20bd09efa3d1aedd5a537ede0b9ad411c84db34e3739",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/117025.jpg"
+    },
+    {
+      "id": "120003",
+      "file": "120003.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/120003.jpg",
+      "sha256": "ec900ce4bdbe93c621dc15edfbbe2b9dce9abd734d6dd3d90bc000afbbb894f0",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/120003.jpg"
+    },
+    {
+      "id": "130014",
+      "file": "130014.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/130014.jpg",
+      "sha256": "07767957cad004bbb9b5b9a651a610c7bc190b9144f0f33ae5de53ddc066cc08",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/130014.jpg"
+    },
+    {
+      "id": "140006",
+      "file": "140006.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/140006.jpg",
+      "sha256": "b2a7f8bbe5997025679a2aef5c63a2af1dc8f82f4f10a54968ed2265eda4f3ed",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/140006.jpg"
+    },
+    {
+      "id": "141012",
+      "file": "141012.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/141012.jpg",
+      "sha256": "64c79597add3618b25e4f1da5ec4663606003ff567ab4f885dc70f2dfdb65bfb",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/141012.jpg"
+    },
+    {
+      "id": "146074",
+      "file": "146074.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/146074.jpg",
+      "sha256": "363c7412accc072dd333079ece458ae7242ffb6e7e7ff43769535695c2eb36df",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/146074.jpg"
+    },
+    {
+      "id": "15062",
+      "file": "15062.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/15062.jpg",
+      "sha256": "5f712262d849dc0c0f3a2105f7a84a5e9d43acd0322dbe3c623ab1666c263b45",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/15062.jpg"
+    },
+    {
+      "id": "159002",
+      "file": "159002.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/159002.jpg",
+      "sha256": "9943225e4dc4f0beeb47f647dbb0135211f03ec227aa0f2f5414bd76879c1d5e",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/159002.jpg"
+    },
+    {
+      "id": "160067",
+      "file": "160067.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/160067.jpg",
+      "sha256": "67433727c173c6d39898b951a9bf0ffad5cd67162e9fd72bd3e63922437c8dfb",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/160067.jpg"
+    },
+    {
+      "id": "163096",
+      "file": "163096.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/163096.jpg",
+      "sha256": "0664af30fb590ed984fc84cf465d2bbf98f7ff4224ccafa07d0c8a88ae7e489a",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/163096.jpg"
+    },
+    {
+      "id": "175083",
+      "file": "175083.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/175083.jpg",
+      "sha256": "1195c007b2c5bfd1dd2e3ca745234761ae84c8eeb6be9369f4dcc7fd683edfc8",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/175083.jpg"
+    },
+    {
+      "id": "183066",
+      "file": "183066.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/183066.jpg",
+      "sha256": "51e445086f15f1ac6ed53fe36d8b05cee73af1814b31bfebe586c1ad380ea3f6",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/183066.jpg"
+    },
+    {
+      "id": "188025",
+      "file": "188025.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/188025.jpg",
+      "sha256": "36f77290d5616c2a19d1e500894d654eb4150334b6d7415a4ae94281d82ccddd",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/188025.jpg"
+    },
+    {
+      "id": "189096",
+      "file": "189096.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/189096.jpg",
+      "sha256": "78aec8826416eb8846855b62ff8afd3808776ad3ab6b2acb1350dd373ed741cd",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/189096.jpg"
+    },
+    {
+      "id": "196088",
+      "file": "196088.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/196088.jpg",
+      "sha256": "4212157c1800d1327405cd1370254cdd9ac2ee79b0a5676c1dd02fa13665c0e5",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/196088.jpg"
+    },
+    {
+      "id": "2018",
+      "file": "2018.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/2018.jpg",
+      "sha256": "181f54d5dc7c77222c5c9992289c885f38156fcae91df8e25c2dda2d3f810b00",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/2018.jpg"
+    },
+    {
+      "id": "207038",
+      "file": "207038.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/207038.jpg",
+      "sha256": "11c553e62de3511c9ab066cc80fb9ffce4bb67bac1b935f6e5eb7ae9509f865b",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/207038.jpg"
+    },
+    {
+      "id": "217013",
+      "file": "217013.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/217013.jpg",
+      "sha256": "21749c24da02f0ecfceb903ba4820445e2f033a9c36569401dd6b5c1a5c24398",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/217013.jpg"
+    },
+    {
+      "id": "223060",
+      "file": "223060.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/223060.jpg",
+      "sha256": "59cdcdb8f190665337fc5ee855151bd2aa1422cb0eae6f10e4a790f06948c066",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/223060.jpg"
+    },
+    {
+      "id": "226043",
+      "file": "226043.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/226043.jpg",
+      "sha256": "e8c71386c23af6bd2ee36d101a830806aafeacce08cd312c602cc427f89e11d8",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/226043.jpg"
+    },
+    {
+      "id": "230098",
+      "file": "230098.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/230098.jpg",
+      "sha256": "78f5c5914ad2c292a3e0b7d08d1d781c48c3b98fc4eabd762488db55c6dbc2e9",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/230098.jpg"
+    },
+    {
+      "id": "238025",
+      "file": "238025.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/238025.jpg",
+      "sha256": "bf5f49a5c122029bda2b400675d331fbf45b37dfd8dc4c2257c690692d5ba253",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/238025.jpg"
+    },
+    {
+      "id": "247012",
+      "file": "247012.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/247012.jpg",
+      "sha256": "36939d7a38fedcddc27b2b8cc0f7a45379422c7c84f25febe477163e9b8f66ca",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/247012.jpg"
+    },
+    {
+      "id": "253016",
+      "file": "253016.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/253016.jpg",
+      "sha256": "c6ccab77d494ddf61d20adb2414dd47ca05cf0324f2778a340e4759593ee3d9b",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/253016.jpg"
+    },
+    {
+      "id": "259060",
+      "file": "259060.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/259060.jpg",
+      "sha256": "5f03b6830584ecc86270eb22d6fc397137fd6b841315fd810451971d6ccae742",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/259060.jpg"
+    },
+    {
+      "id": "277053",
+      "file": "277053.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/277053.jpg",
+      "sha256": "e6efb84d5861557244cc8dd3ba3e3ea23bec2fd9c92813ecf61643036c6ba9d4",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/277053.jpg"
+    },
+    {
+      "id": "285022",
+      "file": "285022.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/285022.jpg",
+      "sha256": "ae15351a5ceb4be26557a55f809ff1d2d56e7109ed9cc9c7dde8210d284b9527",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/285022.jpg"
+    },
+    {
+      "id": "29030",
+      "file": "29030.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/29030.jpg",
+      "sha256": "586afdd37df42107807307b75ae03e42c68fe6c813792a85c8ec1daffb71c598",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/29030.jpg"
+    },
+    {
+      "id": "306051",
+      "file": "306051.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/306051.jpg",
+      "sha256": "fc1a1310bb2b827c98506ec665c3844c347613a92debd6fb3e29b5dbcd0ce2c4",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/306051.jpg"
+    },
+    {
+      "id": "317043",
+      "file": "317043.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/317043.jpg",
+      "sha256": "268dbaff8e5a307428e8677953a2997830befa3aba1732f419b400dc9fa7f14c",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/317043.jpg"
+    },
+    {
+      "id": "334025",
+      "file": "334025.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/334025.jpg",
+      "sha256": "2545f5caaa9842cfc0a63fce25fd7a66ec6a2c874a9ed429917e73c19b25f788",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/334025.jpg"
+    },
+    {
+      "id": "346016",
+      "file": "346016.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/346016.jpg",
+      "sha256": "59a237f15337f1fefb5ae61c8ef62f5c010a72e37b67c6126109a4292d38e034",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/346016.jpg"
+    },
+    {
+      "id": "36046",
+      "file": "36046.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/36046.jpg",
+      "sha256": "6c82c7843999aab18ed5099e2b3326900acf6ac37c458a93932b0bbdc5c4ca9a",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/36046.jpg"
+    },
+    {
+      "id": "376086",
+      "file": "376086.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/376086.jpg",
+      "sha256": "4cc879fcd8099cee913a26c01cdc7368c590be944f5cf2ebfbeb74233902d161",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/376086.jpg"
+    },
+    {
+      "id": "388006",
+      "file": "388006.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/388006.jpg",
+      "sha256": "9775af03fae6a2cdd2faf95f5e72660d5772e57a0a523508b8268b3da37d9b23",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/388006.jpg"
+    },
+    {
+      "id": "41006",
+      "file": "41006.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/41006.jpg",
+      "sha256": "23a926b6ac7bee64a9dc216dfde6a9bf30343d7276fbc5b14e584b32df94e483",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/41006.jpg"
+    },
+    {
+      "id": "43033",
+      "file": "43033.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/43033.jpg",
+      "sha256": "1abebaa96fdf42186d97679cd28d22dffba206767ebc8838e61c0f517b89b7f1",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/43033.jpg"
+    },
+    {
+      "id": "48025",
+      "file": "48025.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/48025.jpg",
+      "sha256": "afef725853d55d53d7aa6a767ecc64b6ed681ecc87a57e69aeed09a115406ed7",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/48025.jpg"
+    },
+    {
+      "id": "6046",
+      "file": "6046.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/6046.jpg",
+      "sha256": "3db99e079df3ee618560d840d02dbf124e35d06461058b4f88688b7334cbe098",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/6046.jpg"
+    },
+    {
+      "id": "69000",
+      "file": "69000.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/69000.jpg",
+      "sha256": "e1a43557e4cc455604580005d332f2f2d3833e71643e186de922a8f46f1152c8",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/69000.jpg"
+    },
+    {
+      "id": "70090",
+      "file": "70090.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/70090.jpg",
+      "sha256": "51bffc1621da3661902b8d56bdfd931a266e65c8bfddb5da194043a192c74288",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/70090.jpg"
+    },
+    {
+      "id": "78098",
+      "file": "78098.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/78098.jpg",
+      "sha256": "5b46e76177965acc8b5d604f7e5845051c68220929a0ce5793bf3abcbc16baf2",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/78098.jpg"
+    },
+    {
+      "id": "8068",
+      "file": "8068.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/8068.jpg",
+      "sha256": "160faa4e5a1ce7428bc03e12c4d5b12b2780e8955de2210b7e91421d662911d5",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/8068.jpg"
+    },
+    {
+      "id": "87015",
+      "file": "87015.jpg",
+      "split": "test",
+      "path": "BSDS500/data/images/test/87015.jpg",
+      "sha256": "67e46094e3018c35400ac756eb85cc18f17f47492a999e7336a43ac6ffb24fd1",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/test/87015.jpg"
+    },
+    {
+      "id": "101085",
+      "file": "101085.jpg",
+      "split": "validation",
+      "path": "BSDS500/data/images/val/101085.jpg",
+      "sha256": "dbefbd4ae3749913ee9fffcdb663bea87ab6634dc8b989422f741243bdbedc8a",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/val/101085.jpg"
+    },
+    {
+      "id": "119082",
+      "file": "119082.jpg",
+      "split": "validation",
+      "path": "BSDS500/data/images/val/119082.jpg",
+      "sha256": "8cf5ce02395627b797b3da7a3845bcb0da14d66942d422a1c898372b67536d4c",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/val/119082.jpg"
+    },
+    {
+      "id": "148026",
+      "file": "148026.jpg",
+      "split": "validation",
+      "path": "BSDS500/data/images/val/148026.jpg",
+      "sha256": "270c2f11ddb596713ebdcbec5c69031a6df97f18cc9d8c5b26cf96a3ef74102c",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/val/148026.jpg"
+    },
+    {
+      "id": "170057",
+      "file": "170057.jpg",
+      "split": "validation",
+      "path": "BSDS500/data/images/val/170057.jpg",
+      "sha256": "a485834fbbc26a08067e0ffef314c2129541d548f9f8dbc0923086c9569ba6c7",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/val/170057.jpg"
+    },
+    {
+      "id": "21077",
+      "file": "21077.jpg",
+      "split": "validation",
+      "path": "BSDS500/data/images/val/21077.jpg",
+      "sha256": "775c0d915b6a5261790eb99fc62afdec4664f9e3cbc2e2d5e724cc69afee3413",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/val/21077.jpg"
+    },
+    {
+      "id": "241048",
+      "file": "241048.jpg",
+      "split": "validation",
+      "path": "BSDS500/data/images/val/241048.jpg",
+      "sha256": "70c5e137c0b102852ae93c5ddf0e315e06297ed009dfe309d54c4cab02074457",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/val/241048.jpg"
+    },
+    {
+      "id": "299086",
+      "file": "299086.jpg",
+      "split": "validation",
+      "path": "BSDS500/data/images/val/299086.jpg",
+      "sha256": "817939c0da8ad228271a1a1cd87f5a31fe93c741617fb478bb95d9ba3a34d2c2",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/val/299086.jpg"
+    },
+    {
+      "id": "37073",
+      "file": "37073.jpg",
+      "split": "validation",
+      "path": "BSDS500/data/images/val/37073.jpg",
+      "sha256": "16e3f09d490cea1bec87326bc02e0440bdb0f7b530a008ce858784c0c476aaff",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/val/37073.jpg"
+    },
+    {
+      "id": "45096",
+      "file": "45096.jpg",
+      "split": "validation",
+      "path": "BSDS500/data/images/val/45096.jpg",
+      "sha256": "8a9cd328ef7c8339f0246ec73c14eda01a29545b5fe4782a3c118976e44f26bf",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/val/45096.jpg"
+    },
+    {
+      "id": "76053",
+      "file": "76053.jpg",
+      "split": "validation",
+      "path": "BSDS500/data/images/val/76053.jpg",
+      "sha256": "6cc809339a953a105ee1bfdf074200181d0e04240e68c830f7aeb21be237c72c",
+      "source": "https://github.com/BIDS/BSDS500/blob/a04b7c6c3a9f0ace74bf205c72a43d32e1c72722/BSDS500/data/images/val/76053.jpg"
+    }
+  ]
+}

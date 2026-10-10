@@ -1,284 +1,36 @@
-import React from 'react';
-import {
-  Sliders,
-  Camera,
-  Palette,
-  FileText,
-  RotateCcw,
-  Sparkles,
-} from 'lucide-react';
-import { UpscaleSettings, UpscalePreset, ScaleFactor, ExportFormat } from '../types.ts';
-
-interface SettingsPanelProps {
-  settings: UpscaleSettings;
-  onChange: (updated: UpscaleSettings) => void;
-  disabled?: boolean;
-  activeDimensions?: { width: number; height: number };
+import { ArrowRight, ChevronDown, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { DEFAULT_SETTINGS, SUPPORTED_FORMATS, SUPPORTED_SCALES, outputLimitMessage, withPreset } from '../../shared/upscale.ts';
+import type { UpscaleSettings } from '../types.ts';
+interface Props { settings: UpscaleSettings; onChange: (next: UpscaleSettings) => void; disabled?: boolean; activeDimensions?: { width: number; height: number } }
+export function SettingsPanel({ settings, onChange, disabled, activeDimensions }: Props) {
+  const pixelArt = settings.preset === 'pixel_art';
+  return <div className="settings-panel">
+    <div className="section-title"><h2>The right fit.</h2><button className="icon-button reset-button" aria-label="Reset settings" title="Reset settings" disabled={disabled} onClick={() => onChange({ ...DEFAULT_SETTINGS })}><RotateCcw size={16} /></button></div>
+    <fieldset disabled={disabled} className="control-group">
+      <legend>Scale <span className="recommended">2× recommended</span></legend>
+      <div className="segmented scale-options">{SUPPORTED_SCALES.map(scale => {
+        const invalid = activeDimensions ? outputLimitMessage(activeDimensions.width, activeDimensions.height, scale) : null;
+        return <button key={scale} type="button" aria-pressed={settings.scale === scale} disabled={Boolean(invalid)} title={invalid ?? `Enlarge ${scale} times`} onClick={() => onChange({ ...settings, scale })}>{scale}<span>×</span></button>;
+      })}</div>
+      <p className="control-hint dimensions-hint">{activeDimensions ? <><span>{activeDimensions.width.toLocaleString()} × {activeDimensions.height.toLocaleString()}</span><ArrowRight size={11} aria-hidden="true" /><strong>{(activeDimensions.width * settings.scale).toLocaleString()} × {(activeDimensions.height * settings.scale).toLocaleString()} px</strong></> : 'More pixels. Same proportions.'}</p>
+    </fieldset>
+    <fieldset className="control-group" disabled={disabled}>
+      <legend>Image type</legend>
+      <div className="segmented type-options"><button type="button" aria-pressed={!pixelArt} onClick={() => onChange(withPreset(settings, 'photo'))}>Photo & art</button><button type="button" aria-pressed={pixelArt} onClick={() => onChange(withPreset(settings, 'pixel_art'))}>Pixel art</button></div>
+      {pixelArt && <p className="control-hint">Keeps pixel edges crisp. No smoothing.</p>}
+    </fieldset>
+    <fieldset className="control-group" disabled={disabled}>
+      <legend>Save as</legend>
+      <div className="segmented format-options">{SUPPORTED_FORMATS.map(format => <button key={format} type="button" aria-pressed={settings.format === format} onClick={() => onChange({ ...settings, format })}>{format.toUpperCase()}</button>)}</div>
+      <p className="control-hint">{settings.format === 'png' ? 'Lossless. Keeps transparency.' : settings.format === 'jpg' ? 'Smaller file. White background.' : settings.quality === 100 ? 'Lossless. Keeps transparency.' : 'Smaller file. Keeps transparency.'}</p>
+      {settings.format !== 'png' && <label className="range-control"><span>Quality<output>{settings.quality === 100 && settings.format === 'webp' ? 'Lossless' : `${settings.quality}%`}</output></span><input aria-label="Export quality" type="range" min={70} max={100} value={settings.quality} onChange={e => onChange({ ...settings, quality: Number(e.target.value) })} /></label>}
+    </fieldset>
+    <details className="adjustments">
+      <summary><span><SlidersHorizontal size={15} />Fine-tune</span><ChevronDown size={15} /></summary>
+      <div className="adjustments-inner">{([
+        ['sharpness', 'Sharpness', 0, 100], ['denoise', 'Smooth noise', 0, 100],
+        ['brightness', 'Brightness', -50, 50], ['contrast', 'Contrast', -50, 50], ['saturation', 'Saturation', -50, 50],
+      ] as const).map(([key, name, min, max]) => <label className="range-control" key={key}><span>{name}<output>{settings[key]}</output></span><input type="range" aria-label={name} min={min} max={max} value={settings[key]} disabled={disabled || (pixelArt && (key === 'sharpness' || key === 'denoise'))} onChange={event => onChange({ ...settings, [key]: Number(event.target.value) })} /></label>)}</div>
+    </details>
+  </div>;
 }
-
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({
-  settings,
-  onChange,
-  disabled = false,
-  activeDimensions,
-}) => {
-  const presets: Array<{
-    id: UpscalePreset;
-    label: string;
-    icon: React.ReactNode;
-  }> = [
-    {
-      id: 'photo',
-      label: 'Photo',
-      icon: <Camera className="h-3.5 w-3.5" />,
-    },
-    {
-      id: 'anime',
-      label: 'Art / Anime',
-      icon: <Palette className="h-3.5 w-3.5" />,
-    },
-    {
-      id: 'document',
-      label: 'Text / Doc',
-      icon: <FileText className="h-3.5 w-3.5" />,
-    },
-  ];
-
-  const handlePresetSelect = (preset: UpscalePreset) => {
-    let sharpness = 45;
-    let denoise = 20;
-
-    if (preset === 'photo') {
-      sharpness = 45;
-      denoise = 20;
-    } else if (preset === 'anime') {
-      sharpness = 65;
-      denoise = 30;
-    } else if (preset === 'document') {
-      sharpness = 75;
-      denoise = 25;
-    }
-
-    onChange({
-      ...settings,
-      preset,
-      sharpness,
-      denoise,
-    });
-  };
-
-  const handleReset = () => {
-    onChange({
-      scale: 2,
-      preset: 'photo',
-      sharpness: 45,
-      denoise: 20,
-      detailBoost: 50,
-      contrast: 0,
-      brightness: 0,
-      saturation: 0,
-      format: 'png',
-      quality: 95,
-    });
-  };
-
-  const targetWidth = activeDimensions ? Math.round(activeDimensions.width * settings.scale) : null;
-  const targetHeight = activeDimensions ? Math.round(activeDimensions.height * settings.scale) : null;
-
-  return (
-    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 sm:p-5 shadow-xl space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-        <div className="flex items-center gap-2">
-          <div className="p-1 rounded-lg bg-cyan-500/10 text-cyan-400">
-            <Sliders className="h-3.5 w-3.5" />
-          </div>
-          <span className="text-xs sm:text-sm font-semibold text-white">Enhancement Settings</span>
-        </div>
-
-        <button
-          onClick={handleReset}
-          disabled={disabled}
-          className="text-xs text-slate-400 hover:text-cyan-400 flex items-center gap-1 transition-colors disabled:opacity-40 cursor-pointer"
-          title="Reset defaults"
-        >
-          <RotateCcw className="h-3 w-3" />
-          <span>Reset</span>
-        </button>
-      </div>
-
-      {/* 1. Scale Factor */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-medium text-slate-300">Upscale Scale</span>
-          {targetWidth && targetHeight && (
-            <span className="font-mono text-cyan-400 tabular-nums text-[11px]">
-              → {targetWidth}×{targetHeight} px
-            </span>
-          )}
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {([2, 4, 8] as ScaleFactor[]).map((factor) => {
-            const isSelected = settings.scale === factor;
-            return (
-              <button
-                key={factor}
-                type="button"
-                disabled={disabled}
-                onClick={() => onChange({ ...settings, scale: factor })}
-                className={`py-2 px-3 rounded-xl text-center border transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-cyan-500/20 border-cyan-500/80 text-white shadow-sm'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
-                }`}
-              >
-                <div className="text-sm font-bold font-mono">{factor}x</div>
-                <div className="text-[10px] text-slate-400">
-                  {factor === 2 ? 'Fast' : factor === 4 ? 'Ultra HD' : '8x Max'}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 2. Enhancement Mode */}
-      <div className="space-y-1.5">
-        <span className="text-xs font-medium text-slate-300">Mode</span>
-        <div className="grid grid-cols-3 gap-1.5">
-          {presets.map((p) => {
-            const isSelected = settings.preset === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                disabled={disabled}
-                onClick={() => handlePresetSelect(p.id)}
-                className={`py-2 px-2 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  isSelected
-                    ? 'bg-cyan-500/20 border-cyan-500/70 text-cyan-300'
-                    : 'bg-slate-950/40 border-slate-800/80 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {p.icon}
-                <span>{p.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3. Sliders: Sharpness and Denoise */}
-      <div className="space-y-3 pt-2 border-t border-slate-800/80">
-        {/* Sharpness */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Sharpness</span>
-            <span className="font-mono tabular-nums text-slate-300">{settings.sharpness}%</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={settings.sharpness}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...settings, sharpness: Number(e.target.value) })}
-            className="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
-          />
-        </div>
-
-        {/* Denoise */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Artifact Denoise</span>
-            <span className="font-mono tabular-nums text-slate-300">{settings.denoise}%</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={settings.denoise}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...settings, denoise: Number(e.target.value) })}
-            className="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
-          />
-        </div>
-      </div>
-
-      {/* 4. Fine controls */}
-      <details className="group border-t border-slate-800/80 pt-3">
-        <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-medium text-slate-300">
-          <span>Fine tune color & detail</span>
-          <span className="text-cyan-400 group-open:rotate-45 transition-transform">+</span>
-        </summary>
-        <div className="space-y-3 pt-3">
-          {([
-            ['detailBoost', 'Detail boost', 0, 100],
-            ['contrast', 'Contrast', -50, 50],
-            ['brightness', 'Brightness', -50, 50],
-            ['saturation', 'Saturation', -50, 50],
-          ] as const).map(([key, label, min, max]) => (
-            <label key={key} className="block space-y-1">
-              <span className="flex justify-between text-xs text-slate-400">
-                <span>{label}</span>
-                <span className="font-mono text-slate-300">{settings[key]}{key === 'detailBoost' ? '%' : ''}</span>
-              </span>
-              <input
-                type="range"
-                min={min}
-                max={max}
-                value={settings[key]}
-                disabled={disabled}
-                onChange={(event) => onChange({ ...settings, [key]: Number(event.target.value), preset: 'custom' })}
-                className="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
-              />
-            </label>
-          ))}
-        </div>
-      </details>
-
-      {/* 5. Format & Quality */}
-      <div className="space-y-2 pt-2 border-t border-slate-800/80">
-        <span className="text-xs font-medium text-slate-300">Format</span>
-        <div className="grid grid-cols-3 gap-2">
-          {(['png', 'jpg', 'webp'] as ExportFormat[]).map((fmt) => {
-            const isSelected = settings.format === fmt;
-            return (
-              <button
-                key={fmt}
-                type="button"
-                disabled={disabled}
-                onClick={() => onChange({ ...settings, format: fmt })}
-                className={`py-1.5 px-3 rounded-lg text-center font-mono uppercase text-xs font-semibold border transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-cyan-500/20 border-cyan-500/80 text-white'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                {fmt}
-              </button>
-            );
-          })}
-        </div>
-
-        {settings.format !== 'png' && (
-          <div className="space-y-1 pt-1">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Quality</span>
-              <span className="font-mono tabular-nums text-slate-300">{settings.quality}%</span>
-            </div>
-            <input
-              type="range"
-              min="80"
-              max="100"
-              value={settings.quality}
-              disabled={disabled}
-              onChange={(e) => onChange({ ...settings, quality: Number(e.target.value) })}
-              className="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
