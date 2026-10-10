@@ -1,163 +1,32 @@
-import React, { useRef, useState } from 'react';
-import { UploadCloud, Sparkles, AlertCircle, Clipboard } from 'lucide-react';
-import { SAMPLE_IMAGES, SampleItem } from '../data/samples.ts';
-
-interface UploadZoneProps {
+import { useRef, useState } from 'react';
+import { ArrowUpRight, ImagePlus, Upload } from 'lucide-react';
+import { SAMPLE_IMAGES, type SampleItem } from '../data/samples.ts';
+interface Props {
   onFilesSelected: (files: File[]) => void;
   onSampleSelected: (sample: SampleItem) => void;
+  onBrowse: () => void;
   disabled?: boolean;
+  adding?: boolean;
 }
-
-export const UploadZone: React.FC<UploadZoneProps> = ({
-  onFilesSelected,
-  onSampleSelected,
-  disabled = false,
-}) => {
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const validateAndAddFiles = (fileList: FileList | null) => {
-    if (!fileList || fileList.length === 0) return;
-    setErrorMessage(null);
-
-    const validFiles: File[] = [];
-    const MAX_SIZE = 4 * 1024 * 1024;
-
-    for (let i = 0; i < fileList.length; i++) {
-      const file = fileList[i];
-      if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
-        setErrorMessage(`"${file.name}" is not a supported raster image.`);
-        continue;
-      }
-      if (file.size > MAX_SIZE) {
-        setErrorMessage(`"${file.name}" exceeds the 4 MB cloud limit.`);
-        continue;
-      }
-      validFiles.push(file);
-    }
-
-    if (validFiles.length > 0) {
-      onFilesSelected(validFiles);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!disabled) setIsDragOver(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    if (!disabled && e.dataTransfer.files) {
-      validateAndAddFiles(e.dataTransfer.files);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Main Drag & Drop Zone */}
-      <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => !disabled && fileInputRef.current?.click()}
-        className={`relative flex flex-col items-center justify-center p-8 sm:p-10 rounded-2xl border-2 border-dashed transition-all cursor-pointer text-center ${
-          isDragOver
-            ? 'border-cyan-400 bg-cyan-950/20 shadow-xl shadow-cyan-500/10'
-            : 'border-slate-800 bg-slate-900/50 hover:border-slate-700 hover:bg-slate-900/80'
-        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept="image/jpeg,image/png,image/webp,image/avif,image/tiff,image/gif,image/heic,image/heif"
-          disabled={disabled}
-          onChange={(e) => validateAndAddFiles(e.target.files)}
-          className="hidden"
-        />
-
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400 mb-3 border border-cyan-500/20">
-          <UploadCloud className="h-6 w-6" />
-        </div>
-
-        <h3 className="text-base font-semibold text-white mb-1">
-          Drop images here or <span className="text-cyan-400 hover:underline">browse</span>
-        </h3>
-        <p className="text-xs text-slate-400 mb-3">
-          Paste with Ctrl+V · Batch up to 20 images · 4 MB each
-        </p>
-
-        {/* Concise format tags */}
-        <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500">
-          <span>PNG</span>
-          <span>·</span>
-          <span>JPG</span>
-          <span>·</span>
-          <span>WebP</span>
-          <span>·</span>
-          <span>AVIF</span>
-          <span>·</span>
-          <span>TIFF</span>
-          <span>·</span>
-          <span>HEIC</span>
-        </div>
-      </div>
-
-      {/* Error alert */}
-      {errorMessage && (
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 text-rose-300 text-xs">
-          <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-
-      {/* Sample Benchmarks */}
-      <div className="rounded-xl bg-slate-900/40 border border-slate-800/80 p-3.5">
-        <div className="flex items-center justify-between mb-2.5">
-          <div className="flex items-center gap-1.5 text-xs font-medium text-slate-300">
-            <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Benchmark samples:</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {SAMPLE_IMAGES.map((sample) => (
-            <button
-              key={sample.id}
-              type="button"
-              disabled={disabled}
-              onClick={() => onSampleSelected(sample)}
-              className="group relative flex items-center gap-2.5 p-2 rounded-lg border border-slate-800/90 bg-slate-950/60 hover:border-cyan-500/40 hover:bg-slate-900 transition-all text-left cursor-pointer"
-            >
-              <img
-                src={sample.url}
-                alt={sample.name}
-                referrerPolicy="no-referrer"
-                className="h-10 w-10 rounded object-cover shrink-0"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-medium text-slate-200 truncate group-hover:text-cyan-300">
-                  {sample.name}
-                </div>
-                <div className="text-[10px] text-slate-500 font-mono truncate">
-                  {sample.category}
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+export function UploadZone({ onFilesSelected, onSampleSelected, onBrowse, disabled, adding }: Props) {
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  return <div className="upload-content">
+    <div className={`dropzone ${dragging ? 'is-dragging' : ''} ${disabled ? 'is-disabled' : ''}`}
+      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = disabled ? 'none' : 'copy'; }}
+      onDragEnter={e => { e.preventDefault(); dragDepth.current++; if (!disabled) setDragging(true); }}
+      onDragLeave={e => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }}
+      onDrop={e => { e.preventDefault(); dragDepth.current = 0; setDragging(false); if (!disabled) onFilesSelected(Array.from(e.dataTransfer.files)); }}>
+      <div className="upload-illustration" aria-hidden="true"><div className="image-card-back" /><div className="image-card-front"><ImagePlus size={33} strokeWidth={1.35} /><span><ArrowUpRight size={17} /></span></div></div>
+      <h2>{dragging ? 'Drop it. We’ve got it.' : 'A little upload. A big difference.'}</h2>
+      <p>Drag your images here, or choose a file.</p>
+      <button className="button primary upload-button" onClick={onBrowse} disabled={disabled}><Upload size={17} />{adding ? 'Opening images…' : 'Choose images'}</button>
+      <span className="upload-formats">JPG, PNG, WebP & more <span>·</span> 4 MB each</span>
+      <span className="paste-hint">You can paste an image, too <kbd>Ctrl + V</kbd></span>
     </div>
-  );
-};
+    <div className="examples" id="examples">
+      <div className="examples-heading"><span>Just looking?</span> Try an example <ArrowUpRight size={14} /></div>
+      <div className="sample-list">{SAMPLE_IMAGES.map(sample => <button key={sample.id} className="sample-button" disabled={disabled} onClick={() => onSampleSelected(sample)} aria-label={`Try ${sample.name.toLowerCase()} example`}><img src={sample.url} alt="" width={52} height={52} /><span>{sample.name}</span></button>)}</div>
+    </div>
+  </div>;
+}

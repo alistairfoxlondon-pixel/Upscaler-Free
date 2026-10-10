@@ -1,13 +1,7 @@
-export default function handler(req: any, res: any) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-  res.setHeader('Cache-Control', 'no-store');
-  return res.status(200).json({
-    status: 'online',
-    engine: 'Sharp/libvips cloud resampling',
-    deployment: 'Vercel Node.js function',
-    libraries: [{ name: 'Sharp', version: '0.34', role: 'Lanczos-3 resize and enhancement' }],
-    supportedFormats: ['JPEG', 'PNG', 'WebP', 'AVIF', 'TIFF', 'GIF', 'HEIC'],
-    exportFormats: ['JPG', 'PNG', 'WebP'],
-    privacy: { ephemeralMode: true, persistentStorage: false, autoDeleteTtlMinutes: 0 },
-  });
+import type { Request, Response } from 'express';
+import { securityHeaders, systemStatus } from '../server/http.ts';
+export default function handler(req: Request, res: Response) {
+  securityHeaders(res);
+  if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return res.status(405).json({ error: 'Use GET for system status.' }); }
+  return res.status(200).json(systemStatus());
 }
