@@ -35,6 +35,12 @@ Before adding features or tuning parameters, we audited the existing codebase (`
 
 Full methodology, reproducible scripts (`scripts/quality/fetch.ts`, `scripts/quality/run.ts`), and per-image metrics (`docs/quality/results.csv`, `docs/quality/results.json`) are published in [docs/quality/RESULTS.md](quality/RESULTS.md).
 
+### Real-ESRGAN deployment boundary
+
+The application includes a real `RealESRGAN_x4plus` integration through `worker/app.py`, but it is deliberately an optional, separately deployed GPU worker—not a claim that the default Vercel/Node path runs a neural model. `server/realesrgan.ts` requires both `REAL_ESRGAN_URL` and `REAL_ESRGAN_API_KEY`; the UI option is shown only after the authenticated `/health` endpoint reports the model ready. The worker processes one image at a time, tiles inference, and does not write user images to disk. A missing/down worker produces an explicit error; there is no silent switch that labels a classic result as AI.
+
+The benchmark below continues to measure only the deterministic NoHalo pipeline against the prior classic pipeline. It does **not** benchmark the Real-ESRGAN checkpoint. Neural restoration may create plausible but inaccurate details, and the checkpoint/training-data terms must be reviewed separately before commercial stock use. See [worker/README.md](../worker/README.md).
+
 - **Calibration vs. evaluation split hygiene:** Parameter and interpolator ablations (`bicubic`, `lbb`, `nohalo`) were conducted on **10 validation photographs** from `BSDS500/data/images/val`. The **50 evaluation photographs** come from the disjoint `BSDS500/data/images/test` split (every 4th lexicographically sorted test image, pinned by commit `a04b7c6c3a9f0ace74bf205c72a43d32e1c72722` and SHA-256 in `scripts/quality/manifest.json`).
 - **Summary across 50 held-out test photographs (250 paired cases, 500 outputs):**
 
@@ -52,7 +58,7 @@ We benchmarked `@upscalerjs/esrgan-slim` (1.0.0, MIT, a lightweight Residual Den
 
 - **Latency:** `@upscalerjs/esrgan-slim` required **679–816 ms** per 240×160 → 480×320 image (**~12× slower** than `libvips` NoHalo at ~54–63 ms), and scales quadratically to several seconds on megapixel inputs—risking serverless timeouts on CPU-only functions.
 - **Fidelity:** On the validation images, `libvips` NoHalo matched or outperformed `esrgan-slim` in PSNR/SSIM at 2× while introducing zero neural checkerboard or hallucination artifacts.
-- **Decision:** We do **not** ship a slow tiny CPU network just to claim “AI super-resolution.” OpenUpscale ships the faster, higher-fidelity `libvips` NoHalo pipeline and clearly states that it performs deterministic resampling rather than generative detail synthesis.
+- **Decision:** We do **not** ship a slow tiny CPU network just to claim “AI super-resolution.” The no-setup engine remains the faster deterministic `libvips` NoHalo pipeline; users who want actual generative restoration can enable the separately deployed Real-ESRGAN GPU worker described above.
 
 ---
 
@@ -64,7 +70,7 @@ We benchmarked `@upscalerjs/esrgan-slim` (1.0.0, MIT, a lightweight Residual Den
 | **libvips** | [libvips/libvips](https://github.com/libvips/libvips) | `LGPL-2.1` | **Selected native core (`8.18.7`).** Provides Nicolas Robidoux’s **NoHalo** Locally Bounded Bicubic/bilinear subdivision interpolator (`vips_interpolate_nohalo`). |
 | **SPAN** | [hongyuanyu/SPAN](https://github.com/hongyuanyu/SPAN) | `Apache-2.0` (repo) — *audit third-party notices* | CVPR 2024 NTIRE Efficient SR winner (Swift Parameter-free Attention Network). Excellent candidate for a dedicated ONNX/TensorRT GPU worker; note third-party notices in repo (`BasicSR` derivatives). |
 | **SPANPlus** | [umzi2/SPANPlus](https://github.com/umzi2/SPANPlus) | `Apache-2.0` | Cleaned PixelShuffle / DySample modernization of SPAN (`spanplus-sts` / `spanplus-st`). Good lightweight architecture for a future GPU/ONNX worker. |
-| **Real-ESRGAN** | [xinntao/Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | `BSD-3-Clause` | Strong blind photo/anime restoration (`RealESRGAN_x4plus`, `realesr-general-x4v3`). Requires tiled GPU worker (PyTorch or ncnn/Vulkan); too heavy for CPU serverless functions. |
+| **Real-ESRGAN** | [xinntao/Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | `BSD-3-Clause` source; checkpoint terms must be reviewed separately | **Optional integrated GPU backend.** `worker/app.py` runs tiled `RealESRGAN_x4plus` behind a server-only authenticated API. PyTorch/CUDA and checkpoint are deliberately outside the Vercel bundle. No neural benchmark is claimed. |
 | **SwinIR** | [JingyunLiang/SwinIR](https://github.com/JingyunLiang/SwinIR) | `Apache-2.0` | High-quality shifted-window transformer SR. High memory/compute footprint; suited only to dedicated GPU workers. |
 | **Spandrel** | [chaiNNer-org/spandrel](https://github.com/chaiNNer-org/spandrel) | `MIT` | PyTorch model architecture loader supporting SPAN, SwinIR, ESRGAN, Real-ESRGAN, HAT, and OmniSR for Python GPU workers. |
 | **waifu2x-ncnn-vulkan** | [nihui/waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) | `MIT` | Fast native anime/illustration upscaler via `ncnn` and Vulkan; requires GPU/Vulkan device unavailable on Vercel Node functions. |
@@ -86,3 +92,13 @@ Per the official [Telenor Brand Typography Guidelines](https://brand.telenor.com
 - OpenUpscale therefore configures:
   1. `@font-face` (`Telenor Local`) referencing `local('Telenor Evolution UI')`, `local('Telenor Evolution')`, and `local('Telenor')` so systems with the official Telenor/Grameenphone typeface installed render it natively with zero network requests.
   2. Self-hosted open-source **DM Sans Variable** (`@fontsource-variable/dm-sans`, SIL Open Font License 1.1) and `Arial, sans-serif` as the Telenor-specified open fallback stack.
+
+---
+
+## 5. Adobe Stock metadata and export boundaries
+
+- Filename and palette/layout heuristics were removed from metadata generation because they cannot establish which subjects are actually visible. The app no longer invents titles or keywords when visual inference is unavailable.
+- A configured server-side vision provider generates an editable title and keywords automatically after image import. Before the provider call, the server applies orientation, sRGB conversion, a 1024-pixel maximum edge, white alpha flattening, and source-metadata stripping. The API credential remains server-side; provider use may have cost or retention terms, which operators must disclose. Without `OPENAI_API_KEY`, the metadata fields stay blank and users may enter verified terms themselves.
+- Runtime research inspected browser ML packages and object-detection weights, including `@vladmandic/human` 3.3.6. Its bundled CenterNet model is an object detector—not a robust general-purpose image-captioning system—so it was not used to assert scene-level Stock metadata. Small ESRGAN/ONNX runtimes were separately evaluated; they do not remove the need for real model weights, compute, deployment configuration, and quality validation.
+- The user-facing export is JPEG only. Each downloaded JPEG adds XMP `dc:title`, `photoshop:Headline`, and `dc:subject` keywords in an APP1 segment. Batch ZIPs contain those JPEGs; there is no CSV or separate metadata sidecar. The app does not submit content to Adobe Stock.
+- Commercial stock acceptance, model-checkpoint terms, source image rights, releases, and final metadata accuracy remain the contributor's responsibility. JPEG conversion may flatten alpha to white and may reduce quality to fit hosting response limits; the UI reports the selected export quality.

@@ -1,15 +1,17 @@
 import sharp, { type Sharp, type SharpOptions, type OutputInfo } from 'sharp';
 import {
   MAX_INPUT_BYTES, MAX_INPUT_PIXELS, MAX_OUTPUT_DIMENSION, MAX_OUTPUT_PIXELS,
-  SUPPORTED_FORMATS, SUPPORTED_PRESETS, SUPPORTED_SCALES, PRESET_DEFAULTS,
+  SUPPORTED_FORMATS, SUPPORTED_PRESETS, SUPPORTED_SCALES, SUPPORTED_ENGINES, PRESET_DEFAULTS,
   outputLimitMessage, type UpscaleOptions, type UpscaleSettings,
 } from '../shared/upscale.ts';
 import { UpscaleError, imageError } from './errors.ts';
+import { realEsrganConfigured, runRealEsrgan } from './realesrgan.ts';
 
 export { MAX_INPUT_BYTES, MAX_OUTPUT_DIMENSION, MAX_OUTPUT_PIXELS, SUPPORTED_FORMATS, SUPPORTED_SCALES };
 export type { UpscaleOptions };
 export const ENGINE = 'libvips NoHalo · centre-aligned';
-export const PIPELINE_VERSION = '2.0.0';
+export const AI_ENGINE = 'Real-ESRGAN x4plus · tiled GPU worker';
+export const PIPELINE_VERSION = '3.0.0';
 
 // Limit native cache/thread amplification. The request gate bounds active image pipelines too.
 sharp.cache({ memory: 16, files: 0, items: 20 });
@@ -41,29 +43,35 @@ function bounded(value: unknown, min: number, max: number, fallback: number, nam
 
 export function normalizeOptions(options: UpscaleOptions): UpscaleSettings {
   if (!options || !SUPPORTED_SCALES.includes(options.scale as UpscaleSettings['scale'])) throw new UpscaleError('Scale must be 2, 4, or 8.');
-  const format = options.format ?? 'png';
+  const format = options.format ?? 'webp';
   if (!SUPPORTED_FORMATS.includes(format)) throw new UpscaleError('Format must be jpg, png, or webp.');
   const preset = options.preset ?? 'photo';
   if (!SUPPORTED_PRESETS.includes(preset)) throw new UpscaleError('Invalid image preset.');
+  const engine = options.engine ?? 'classic';
+  if (!SUPPORTED_ENGINES.includes(engine)) throw new UpscaleError('Choose the faithful or Real-ESRGAN engine.');
+  if (engine === 'realesrgan' && (preset === 'pixel_art' || preset === 'document')) throw new UpscaleError('Real-ESRGAN can alter pixel edges and text. Choose the faithful engine for documents or pixel art.');
   const defaults = PRESET_DEFAULTS[preset];
+  const presetQuality = preset === 'pixel_art' || preset === 'document' ? 100 : 95;
   return {
-    scale: options.scale as UpscaleSettings['scale'], preset, format,
+    scale: options.scale as UpscaleSettings['scale'], engine, preset, format,
     sharpness: bounded(options.sharpness, 0, 100, defaults.sharpness, 'Sharpness'),
     denoise: bounded(options.denoise, 0, 100, defaults.denoise, 'Smoothing'),
     detailBoost: bounded(options.detailBoost, 0, 100, defaults.detailBoost, 'Detail'),
     contrast: bounded(options.contrast, -50, 50, 0, 'Contrast'),
     brightness: bounded(options.brightness, -50, 50, 0, 'Brightness'),
     saturation: bounded(options.saturation, -50, 50, 0, 'Saturation'),
-    quality: Math.round(bounded(options.quality, 70, 100, 95, 'Quality')),
+    quality: Math.round(bounded(options.quality, 70, 100, presetQuality, 'Quality')),
   };
 }
 
 /** Faithful raster enlargement, NOT a neural reconstruction model. No image files are written. */
-export async function processImageUpscale(inputBuffer: Buffer, rawOptions: UpscaleOptions): Promise<UpscaleResult> {
+export async function processImageUpscale(inputBuffer: Buffer, rawOptions: UpscaleOptions, clientSignal?: AbortSignal): Promise<UpscaleResult> {
   const start = performance.now();
   if (!Buffer.isBuffer(inputBuffer) || !inputBuffer.length) throw new UpscaleError('Image is empty.');
   if (inputBuffer.length > MAX_INPUT_BYTES) throw new UpscaleError('Image exceeds the 4 MB upload limit.', 413, 'FILE_TOO_LARGE');
   const options = normalizeOptions(rawOptions);
+  const checkCancelled = () => { if (clientSignal?.aborted) throw new UpscaleError('Processing was cancelled.', 499, 'CANCELLED'); };
+  checkCancelled();
   const deadline = start + 45_000;
   const timed = (pipeline: Sharp) => {
     const remaining = Math.floor((deadline - performance.now()) / 1000);
@@ -85,30 +93,49 @@ export async function processImageUpscale(inputBuffer: Buffer, rawOptions: Upsca
     const limit = outputLimitMessage(originalWidth, originalHeight, options.scale);
     if (limit) throw new UpscaleError(limit, 413, 'OUTPUT_PIXEL_LIMIT');
     const pixelArt = options.preset === 'pixel_art';
-    const pad = pixelArt ? 0 : 3;
+    const pad = pixelArt || options.engine === 'realesrgan' ? 0 : 3;
     const warnings: string[] = [];
     if (meta.hasAlpha && options.format === 'jpg') warnings.push('JPG uses a white background. Choose PNG or WebP to keep transparency.');
     if (options.scale === 8) warnings.push('8× makes a larger image, not eight times more detail.');
-
-    // A separate source-sized stage is essential: Sharp reorders blur AFTER resize in one chain.
-    // Working in sRGB strips EXIF/GPS while respecting embedded colour profiles.
-    let source = sharp(inputBuffer, inputOptions).autoOrient().toColourspace('srgb');
-    if (options.denoise > 0 && !pixelArt) source = source.blur(0.3 + options.denoise / 125);
-    if (pad) source = source.extend({ top: pad, bottom: pad, left: pad, right: pad, extendWith: 'copy' });
-    const prepared = await timed(source).raw().toBuffer({ resolveWithObject: true });
+    if (options.engine === 'realesrgan') warnings.push('Real-ESRGAN can invent plausible detail. Inspect the result carefully before commercial use.');
 
     let enlarged: { data: Buffer; info: OutputInfo };
-    if (pixelArt) {
-      enlarged = await timed(sharp(prepared.data, { raw: prepared.info }).resize(upscaledWidth, upscaledHeight, { kernel: 'nearest' }))
-        .raw().toBuffer({ resolveWithObject: true });
+    let resolvedEngine = pixelArt ? 'libvips nearest neighbour' : ENGINE;
+    if (options.engine === 'realesrgan') {
+      if (!realEsrganConfigured()) throw new UpscaleError('Real-ESRGAN AI is not configured with both a GPU worker URL and server credential. The image was not sent.', 503, 'AI_NOT_CONFIGURED');
+      // Normalize orientation/profile and optional source-scale smoothing before the neural model.
+      let source = sharp(inputBuffer, inputOptions).autoOrient().toColourspace('srgb');
+      if (options.denoise > 0) source = source.blur(0.3 + options.denoise / 125);
+      const workerInput = await timed(source.png({ compressionLevel: 3 })).toBuffer();
+      checkCancelled();
+      const aiResult = await runRealEsrgan(workerInput, options.scale, clientSignal);
+      checkCancelled();
+      const aiMetadata = await sharp(aiResult.buffer, inputOptions).metadata();
+      if (aiMetadata.format !== 'png' || aiMetadata.width !== upscaledWidth || aiMetadata.height !== upscaledHeight) {
+        throw new UpscaleError('The Real-ESRGAN worker returned the wrong image dimensions. Try again or use the faithful engine.', 502, 'AI_INVALID_RESPONSE');
+      }
+      enlarged = await timed(sharp(aiResult.buffer, inputOptions).toColourspace('srgb').raw()).toBuffer({ resolveWithObject: true });
+      resolvedEngine = `${aiResult.model} · Real-ESRGAN`;
     } else {
-      // Map pixel centres, not corners: x_out = scale * (x_in + 0.5) - 0.5.
-      // NoHalo avoids cubic overshoot. Copy-padding prevents dark/transparent image borders.
-      // Keep affine separate from sharpening: libvips handles alpha premultiplication itself.
-      enlarged = await timed(sharp(prepared.data, { raw: prepared.info }).affine(
-        [[options.scale, 0], [0, options.scale]],
-        { interpolator: sharp.interpolators.nohalo, idx: 0.5, idy: 0.5, odx: -0.5, ody: -0.5 },
-      )).raw().toBuffer({ resolveWithObject: true });
+      // A separate source-sized stage is essential: Sharp reorders blur AFTER resize in one chain.
+      // Working in sRGB strips EXIF/GPS while respecting embedded colour profiles.
+      let source = sharp(inputBuffer, inputOptions).autoOrient().toColourspace('srgb');
+      if (options.denoise > 0 && !pixelArt) source = source.blur(0.3 + options.denoise / 125);
+      if (pad) source = source.extend({ top: pad, bottom: pad, left: pad, right: pad, extendWith: 'copy' });
+      const prepared = await timed(source).raw().toBuffer({ resolveWithObject: true });
+
+      if (pixelArt) {
+        enlarged = await timed(sharp(prepared.data, { raw: prepared.info }).resize(upscaledWidth, upscaledHeight, { kernel: 'nearest' }))
+          .raw().toBuffer({ resolveWithObject: true });
+      } else {
+        // Map pixel centres, not corners: x_out = scale * (x_in + 0.5) - 0.5.
+        // NoHalo avoids cubic overshoot. Copy-padding prevents dark/transparent image borders.
+        // Keep affine separate from sharpening: libvips handles alpha premultiplication itself.
+        enlarged = await timed(sharp(prepared.data, { raw: prepared.info }).affine(
+          [[options.scale, 0], [0, options.scale]],
+          { interpolator: sharp.interpolators.nohalo, idx: 0.5, idy: 0.5, odx: -0.5, ody: -0.5 },
+        )).raw().toBuffer({ resolveWithObject: true });
+      }
     }
 
     let pipeline = sharp(enlarged.data, { raw: enlarged.info }).extract({
@@ -139,7 +166,7 @@ export async function processImageUpscale(inputBuffer: Buffer, rawOptions: Upsca
       upscaledWidth: info.width, upscaledHeight: info.height,
       originalSize: inputBuffer.length, upscaledSize: buffer.length,
       processingTimeMs: Math.round(performance.now() - start),
-      engine: pixelArt ? 'libvips nearest neighbour' : ENGINE,
+      engine: resolvedEngine,
       pipelineVersion: PIPELINE_VERSION,
       hasAlpha: options.format !== 'jpg' && Boolean(meta.hasAlpha), warnings, settings: options,
     };
