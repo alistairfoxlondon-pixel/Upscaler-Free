@@ -7,8 +7,9 @@ interface Props {
   onBrowse: () => void;
   disabled?: boolean;
   adding?: boolean;
+  metadataAiAvailable?: boolean;
 }
-export function UploadZone({ onFilesSelected, onSampleSelected, onBrowse, disabled, adding }: Props) {
+export function UploadZone({ onFilesSelected, onSampleSelected, onBrowse, disabled, adding, metadataAiAvailable = false }: Props) {
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
   return <div className="upload-content">
@@ -23,6 +24,7 @@ export function UploadZone({ onFilesSelected, onSampleSelected, onBrowse, disabl
       <button className="button primary upload-button" onClick={onBrowse} disabled={disabled}><Upload size={17} />{adding ? 'Opening images…' : 'Choose images'}</button>
       <span className="upload-formats">JPG, PNG, WebP & more <span>·</span> 4 MB each</span>
       <span className="paste-hint">You can paste an image, too <kbd>Ctrl + V</kbd></span>
+      <span className="upload-meta-note">{metadataAiAvailable ? 'AI metadata is on: uploads are sent to this site’s vision provider.' : 'No metadata is guessed. Add only details you can verify.'}</span>
     </div>
     <div className="examples" id="examples">
       <div className="examples-heading"><span>Just looking?</span> Try an example <ArrowUpRight size={14} /></div>

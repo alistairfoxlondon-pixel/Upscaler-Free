@@ -1,5 +1,6 @@
-import type { UpscaleSettings, ScaleFactor, ExportFormat, UpscalePreset } from '../shared/upscale.ts';
-export type { UpscaleSettings, ScaleFactor, ExportFormat, UpscalePreset };
+import type { UpscaleSettings, ScaleFactor, ExportFormat, UpscalePreset, UpscaleEngine } from '../shared/upscale.ts';
+import type { StockMetadata } from '../shared/stock.ts';
+export type { UpscaleSettings, ScaleFactor, ExportFormat, UpscalePreset, UpscaleEngine, StockMetadata };
 
 export interface UpscaleMetadata {
   mimeType: string;
@@ -34,5 +35,7 @@ export interface ImageQueueItem {
   status: 'idle' | 'processing' | 'success' | 'error';
   errorMessage?: string;
   result?: UpscaleResultData;
+  stockMetadata: StockMetadata;
+  stockMetadataStatus: 'unavailable' | 'ready' | 'generating' | 'error';
   settingsSnapshot: UpscaleSettings;
 }

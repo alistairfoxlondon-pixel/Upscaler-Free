@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeftRight, ArrowRight, Download, ImageOff, LoaderCircle, MoveHorizontal } from 'lucide-react';
 import type { ImageQueueItem } from '../types.ts';
-import { formatBytes } from '../lib/files.ts';
-interface Props { item: ImageQueueItem; onDownload: (item: ImageQueueItem) => void }
+import { sameSettings } from '../../shared/upscale.ts';
+interface Props { item: ImageQueueItem; onDownload: (item: ImageQueueItem) => void | Promise<void>; downloadBusy?: boolean }
 type Mode = 'compare' | 'result' | 'original';
 
-export function ComparisonSlider({ item, onDownload }: Props) {
+export function ComparisonSlider({ item, onDownload, downloadBusy = false }: Props) {
   const [mode, setMode] = useState<Mode>('compare');
   const [position, setPosition] = useState(50);
   const [actualSize, setActualSize] = useState(false);
@@ -14,6 +14,7 @@ export function ComparisonSlider({ item, onDownload }: Props) {
   const canvas = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const hasResult = Boolean(item.result);
+  const resultNeedsRefresh = Boolean(item.result && !sameSettings(item.result.settings, item.settingsSnapshot));
   const effectiveMode = !hasResult ? 'original' : !item.previewAvailable ? 'result' : mode;
   useEffect(() => { setPosition(50); setActualSize(false); setMode('compare'); }, [item.id]);
   useEffect(() => {
@@ -59,8 +60,10 @@ export function ComparisonSlider({ item, onDownload }: Props) {
       {item.status === 'processing' && <div className="processing-overlay" role="status"><span><LoaderCircle className="spin" size={22} />Making room for more.</span><small>Processing your image…</small></div>}
     </div>
     <div className="viewer-footer">
-      <div className="image-metadata"><strong>{item.originalWidth ? `${item.originalWidth.toLocaleString()} × ${item.originalHeight?.toLocaleString()}` : 'Original image'}{item.result && <><ArrowRight size={12} className="resolution-arrow" aria-hidden="true" />{item.result.upscaledWidth.toLocaleString()} × {item.result.upscaledHeight.toLocaleString()}</>}</strong><span>{item.result ? `${item.result.format.toUpperCase()} · ${formatBytes(item.result.upscaledSize)} · ${(item.result.processingTimeMs / 1000).toFixed(1)}s` : formatBytes(item.originalSize)}</span></div>
-      {item.result ? <button className="button primary download-button" onClick={() => onDownload(item)}><Download size={16} /><span>Download</span></button> : <span className="preview-caption">Your original, unedited.</span>}
+      <div className="image-metadata"><strong>{item.originalWidth ? `${item.originalWidth.toLocaleString()} × ${item.originalHeight?.toLocaleString()}` : 'Original image'}{item.result && <><ArrowRight size={12} className="resolution-arrow" aria-hidden="true" />{item.result.upscaledWidth.toLocaleString()} × {item.result.upscaledHeight.toLocaleString()}</>}</strong><span>{item.result ? `Upscaled in ${(item.result.processingTimeMs / 1000).toFixed(1)}s · ${item.result.settings.format === 'jpg' ? 'JPEG' : item.result.settings.format.toUpperCase()} preview` : 'Original image'}</span></div>
+      {item.result ? <button className="button primary download-button" aria-label="Download JPEG with embedded title and keywords" title={resultNeedsRefresh ? 'Upscale again to apply changed settings before downloading.' : item.stockMetadata.title && item.stockMetadata.keywords.length ? 'Title and keywords will be embedded in the JPEG.' : 'Add a title and at least one keyword before downloading.'} disabled={downloadBusy || resultNeedsRefresh || !item.stockMetadata.title.trim() || !item.stockMetadata.keywords.length} onClick={() => void onDownload(item)}>
+        {downloadBusy ? <LoaderCircle className="spin" size={16} /> : <Download size={16} />}<span>{downloadBusy ? 'Preparing…' : 'Download JPEG'}</span>
+      </button> : <span className="preview-caption">Your original, unedited.</span>}
     </div>
   </div>;
 }

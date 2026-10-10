@@ -1,15 +1,12 @@
 import { MAX_INPUT_BYTES } from '../../shared/upscale.ts';
-const mimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/tiff', 'image/gif', 'image/heic', 'image/heif']);
-export const FILE_ACCEPT = '.jpg,.jpeg,.png,.webp,.avif,.tif,.tiff,.gif,.heic,.heif';
+const mimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/tiff', 'image/gif']);
+export const FILE_ACCEPT = '.jpg,.jpeg,.png,.webp,.avif,.tif,.tiff,.gif';
 export function fileError(file: Pick<File, 'name' | 'type' | 'size'>): string | null {
   if (file.size === 0) return `${file.name} is empty.`;
   if (file.size > MAX_INPUT_BYTES) return `${file.name} is over 4 MB.`;
-  if (file.type ? !mimeTypes.has(file.type) : !/\.(jpe?g|png|webp|avif|tiff?|gif|heic|heif)$/i.test(file.name)) return `${file.name} is not a supported image.`;
+  if (file.type === 'image/heic' || file.type === 'image/heif' || /\.(heic|heif)$/i.test(file.name)) return `${file.name}: HEIC/HEIF needs conversion to JPG or PNG first.`;
+  if (file.type ? !mimeTypes.has(file.type) : !/\.(jpe?g|png|webp|avif|tiff?|gif)$/i.test(file.name)) return `${file.name} is not a supported image.`;
   return null;
-}
-export function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  return bytes < 1024 ** 2 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 export function downloadName(name: string, scale: number, format: string) {
   const leaf = (name.split(/[\\/]/).pop() || name).replace(/\.[^/.]+$/, '');

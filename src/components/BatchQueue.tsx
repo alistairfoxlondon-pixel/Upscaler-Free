@@ -1,10 +1,26 @@
-import { Check, Download, Image, LoaderCircle, Plus, Trash2, X, AlertCircle, ArrowUpRight } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Check, Download, Image, LoaderCircle, Plus, Trash2, X } from 'lucide-react';
 import type { ImageQueueItem } from '../types.ts';
-interface Props { items: ImageQueueItem[]; selectedId?: string; onSelect: (id: string) => void; onRemove: (id: string) => void; onClear: () => void; onProcess: () => void; onZip: () => void; onApply: () => void; onBrowse: () => void; busy: boolean; zipping: boolean; disabled: boolean }
+
+interface Props {
+  items: ImageQueueItem[];
+  selectedId?: string;
+  onSelect: (id: string) => void;
+  onRemove: (id: string) => void;
+  onClear: () => void;
+  onProcess: () => void;
+  onZip: () => void;
+  onApply: () => void;
+  onBrowse: () => void;
+  busy: boolean;
+  zipping: boolean;
+  disabled: boolean;
+}
+
 export function BatchQueue({ items, selectedId, onSelect, onRemove, onClear, onProcess, onZip, onApply, onBrowse, busy, zipping, disabled }: Props) {
   if (items.length < 2) return null;
   const waiting = items.filter(item => item.status === 'idle' || item.status === 'error').length;
   const ready = items.filter(item => item.result).length;
+  const missingMetadata = items.some(item => item.result && (!item.stockMetadata.title.trim() || !item.stockMetadata.keywords.length));
   return <section className="batch-section" aria-label="Image queue">
     <div className="batch-heading"><h2>Your images <span>{items.length}/20</span></h2><div className="batch-actions">
       <button className="text-button" onClick={onApply} disabled={disabled}>Apply settings to all</button>
@@ -18,6 +34,11 @@ export function BatchQueue({ items, selectedId, onSelect, onRemove, onClear, onP
       <div className="queue-status">{item.status === 'success' ? <Check size={13} /> : item.status === 'error' ? <AlertCircle size={13} /> : item.status === 'processing' ? <LoaderCircle className="spin" size={13} /> : null}</div>
       <button className="queue-remove" onClick={() => onRemove(item.id)} disabled={disabled} aria-label={`Remove ${item.name}`}><X size={13} /></button>
     </div>)}<button className="queue-add" onClick={onBrowse} disabled={disabled || items.length >= 20} aria-label="Add more images"><Plus size={20} /></button></div>
-    <div className="batch-bottom"><span>{ready} ready <span>·</span> {waiting} waiting</span><div>{waiting > 0 && <button className="button secondary small" disabled={disabled} onClick={onProcess}>{busy ? 'Upscaling…' : `Upscale all (${waiting})`}<ArrowUpRight size={15} /></button>}<button className="button secondary small" disabled={!ready || disabled} onClick={onZip}>{zipping ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}{zipping ? 'Creating ZIP…' : 'Download ZIP'}</button></div></div>
+    <div className="batch-bottom"><span>{ready} ready <span>·</span> {waiting} waiting</span><div>
+      {waiting > 0 && <button className="button secondary small" disabled={disabled} onClick={onProcess}>{busy ? 'Upscaling…' : `Upscale all (${waiting})`}<ArrowUpRight size={15} /></button>}
+      <button className="button secondary small" disabled={!ready || disabled || missingMetadata} title={missingMetadata ? 'Add a title and keywords to every upscaled image.' : 'Download JPEGs with embedded metadata.'} onClick={onZip}>
+        {zipping ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}{zipping ? 'Creating JPEGs…' : 'Download JPEGs'}
+      </button>
+    </div></div>
   </section>;
 }
